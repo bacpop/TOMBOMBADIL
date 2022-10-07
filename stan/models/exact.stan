@@ -1,5 +1,5 @@
 functions {
-#include functions/PDRM_mat.stan
+#include functions/NY98.stan
 }
 
 data {
