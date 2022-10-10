@@ -45,7 +45,7 @@ def model(pi_eq, N, l, lp, pimat, pimatinv, pimult, obs_mat, phi):
         omega = numpyro.sample("omega", dist.Exponential(0.5))
         N_batch = N[codons]
         l = len(N_batch)
-        obs_mat_batch = obs_mat[codons]
+        obs_mat_batch = obs_mat[codons, :, :]
         numpyro.sample('obs', partial_likelihood(A, obs_mat_batch, N_batch, l,
                                                  omega, lp, pimat, pimult, pimatinv,
                                                  scale, phi))
@@ -66,10 +66,10 @@ def transforms(X, pi_eq):
             pimult[i, j] = np.sqrt(pi_eq[j] / pi_eq[i])
 
     phi = []
-    obs_mat = []
+    obs_mat = np.empty((X.shape[1], 61, 61))
     for l in range(X.shape[1]):
         phi.append(lgamma(N[l] + 1) - sum([lgamma(x + 1) for x in X[:, l]]))
-        obs_mat.append(np.broadcast_to(X[:, l], (61, 61)))
+        obs_mat[l, :, :] = np.broadcast_to(X[:, l], (61, 61))
 
     return N, l, lp, pimat, pimatinv, pimult, obs_mat, phi
 
