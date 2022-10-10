@@ -28,7 +28,7 @@ def get_options():
 
     # input options
     iGroup = parser.add_argument_group('Input files')
-    iGroup.add_argument('--alignment', type=str,
+    iGroup.add_argument('--alignment', type=str, required=True,
                         help='Alignment file to fit model to')
 
     mGroup = parser.add_argument_group('Model options')
