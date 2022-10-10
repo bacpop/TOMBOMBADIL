@@ -24,7 +24,7 @@ col_order = np.array([63, 61, 60, 62, 55, 53, 52, 54, 51, 49, 59, 57, 58, 31, 29
 def get_options():
     import argparse
     parser = argparse.ArgumentParser(description='TOMBOMBADIL (Tree-free Omega Mapping By Observing Mutations of Bases and Amino acids Distributed Inside Loci)',
-                                     prog='tombombadil', version=)
+                                     prog='tombombadil')
 
     # input options
     iGroup = parser.add_argument_group('Input files')
