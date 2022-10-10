@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import logging
 import gzip
 import numpy as np
 
@@ -100,16 +101,16 @@ def count_codons(file_name):
     return X, n_samples
 
 def main():
-    import logging
     logging.basicConfig(
         format='%(asctime)s %(levelname)-8s %(message)s',
         level=logging.INFO,
-        datefmt='%Y-%m-%d %H:%M:%S')
+        datefmt='%Y-%m-%d %H:%M:%S',
+        force=True)
 
     options = get_options()
     logging.info("Reading alignment...")
     X, n_samples = count_codons(options.alignment)
-    logging.info(f"{n_samples} samples and {X.shape[1]} loci")
+    logging.info(f"Read {n_samples} samples and {X.shape[1]} loci")
 
     if options.pi is None:
         pi = np.array([1/61 for i in range(61)])
