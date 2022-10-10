@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
 import gzip
+from .sample import run_sampler
 import numpy as np
-from sample import run_sampler
 
 # expected order
 # "TTT","TTC","TTA","TTG","TCT","TCC","TCA","TCG","TAT","TAC","TGT","TGC"
@@ -18,6 +18,26 @@ col_order = np.array([63, 61, 60, 62, 55, 53, 52, 54, 51, 49, 59, 57, 58, 31, 29
                       36, 38, 35, 33, 32, 34, 43, 41, 40, 42, 48, 50, 56, 64])
 #stop codons 48 50 56
 #Ns 64
+
+def get_options():
+    import argparse
+    parser = argparse.ArgumentParser(description='TOMBOMBADIL (Tree-free Omega Mapping By Observing Mutations of Bases and Amino acids Distributed Inside Loci)',
+                                     prog='tombombadil')
+
+    # input options
+    iGroup = parser.add_argument_group('Input files')
+    iGroup.add_argument('--alignment', type=str,
+                        help='Alignment file to fit model to')
+
+    mGroup = parser.add_argument_group('Model options')
+    mGroup.add_argument('--pi', type=str, default=None,
+                        help='Pi equilibrium vector (default all equal)')
+
+    sGroup = parser.add_argument_group('Sampling options')
+    sGroup.add_argument('--sample-it', type=int, default=500,
+                        help='Sampling iterations')
+    sGroup.add_argument('--warmup-it', type=int, default=500,
+                        help='Warmup iterations')
 
 def read_fasta(fp):
     name, seq = None, []
@@ -69,12 +89,11 @@ def count_codons(file_name):
     return X
 
 def main():
-    # Need to read in data
-    # see https://github.com/gtonkinhill/pairsnp-python/blob/master/pairsnp/pairsnp.py
-    # and https://github.com/gtonkinhill/panaroo/blob/master/panaroo/prokka.py
-    # but should be easy enough, just use a static lookup from codon to idx
-    # (eventually reduce sum/merge would work if wanting to parallelise)
-    print(run_sampler(X, pi_eq, warmup, samples))
+    options = get_options()
+    X = count_codons(options.alignment)
+    if options.pi is None:
+        pi = np.array([1/61 for i in range(61)])
+    print(run_sampler(X, pi, options.warmup_it, options.sampling_it))
 
 if __name__ == "__main__":
     main()
