@@ -45,6 +45,9 @@ def get_options():
     other.add_argument('--version', action='version',
                        version='%(prog)s '+__version__)
 
+    args = parser.parse_args()
+    return args
+
 def read_fasta(fp):
     name, seq = None, []
     for line in fp:
