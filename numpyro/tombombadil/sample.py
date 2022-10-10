@@ -10,7 +10,7 @@ import jax.random as random
 from .gtr import build_GTR
 from .likelihood import partial_likelihood
 
-def model(X, pi_eq, N, l, lp, pimat, pimatinv, pimult, obs_mat, phi):
+def model(pi_eq, N, l, lp, pimat, pimatinv, pimult, obs_mat, phi):
     # GTR params (shared)
     alpha_prior = dist.Normal(0, 1)
     beta_prior = dist.Normal(0, 1)
@@ -68,8 +68,8 @@ def transforms(X, pi_eq):
     phi = []
     obs_mat = []
     for l in range(X.shape[1]):
-        phi.append(lgamma(N[l] + 1) - sum([lgamma(x + 1) for x in X[l, :]]))
-        obs_mat.append(np.broadcast_to(X[i, :], (61, 61)))
+        phi.append(lgamma(N[l] + 1) - sum([lgamma(x + 1) for x in X[:, l]]))
+        obs_mat.append(np.broadcast_to(X[:, l], (61, 61)))
 
     return N, l, lp, pimat, pimatinv, pimult, obs_mat, phi
 
@@ -79,7 +79,7 @@ def run_sampler(X, pi_eq, warmup=500, samples=500):
     nuts_kernel = NUTS(model)
     mcmc = MCMC(nuts_kernel, num_warmup=warmup, num_samples=samples+warmup)
     rng_key = random.PRNGKey(0)
-    results = mcmc.run(rng_key, X, pi_eq, N, l, lp, pimat, pimatinv, pimult, obs_mat,
+    results = mcmc.run(rng_key, pi_eq, N, l, lp, pimat, pimatinv, pimult, obs_mat,
                        phi, extra_fields=('potential_energy',))
 
     return results
