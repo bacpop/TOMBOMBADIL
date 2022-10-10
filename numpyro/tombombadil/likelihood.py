@@ -33,10 +33,12 @@ def partial_likelihood(A, obs_mat, N, l, omega, lp, pimat, pimult,
             # m_AB[i, ] = to_row_vector(rows_dot_product(Va, V_inv))
             # Possible with jax.vmap?
             # row_sum_fn = jax.vmap(lambda x, y: jnp.vdot(x, y), (1, 1), 0)
-            row = jnp.einsum('ij,ij->i', Va, V_inv)
+            row = jnp.reshape(jnp.einsum('ij,ij->i', Va, V_inv), (-1, 1))
             # If using option 1 below
             # row = jnp.divide(row, sqp.at[i].get())
             dynamic_update_slice_in_dim(m_AB, row, i, 0)
+
+#TypeError: dynamic_update_slice update must have the same rank as operand, got update shape (61,) for operand shape (61, 61).
 
         # Add equilibrium frequencies (option 1)
         #for i in range(61):
