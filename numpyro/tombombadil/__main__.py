@@ -1,8 +1,10 @@
 #!/usr/bin/env python
 
 import gzip
-from .sample import run_sampler
 import numpy as np
+
+from .__init__ import __version__
+from .sample import run_sampler
 
 # expected order
 # "TTT","TTC","TTA","TTG","TCT","TCC","TCA","TCG","TAT","TAC","TGT","TGC"
@@ -22,7 +24,7 @@ col_order = np.array([63, 61, 60, 62, 55, 53, 52, 54, 51, 49, 59, 57, 58, 31, 29
 def get_options():
     import argparse
     parser = argparse.ArgumentParser(description='TOMBOMBADIL (Tree-free Omega Mapping By Observing Mutations of Bases and Amino acids Distributed Inside Loci)',
-                                     prog='tombombadil')
+                                     prog='tombombadil', version=)
 
     # input options
     iGroup = parser.add_argument_group('Input files')
@@ -38,6 +40,10 @@ def get_options():
                         help='Sampling iterations')
     sGroup.add_argument('--warmup-it', type=int, default=500,
                         help='Warmup iterations')
+
+    other = parser.add_argument_group('Other options')
+    other.add_argument('--version', action='version',
+                       version='%(prog)s '+__version__)
 
 def read_fasta(fp):
     name, seq = None, []
