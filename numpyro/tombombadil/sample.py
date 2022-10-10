@@ -60,7 +60,7 @@ def transforms(X, pi_eq):
     pimat = np.diag(np.sqrt(pi_eq))
     pimatinv = np.diag(np.divide(1, np.sqrt(pi_eq)))
 
-    pimult = np.array((61, 61))
+    pimult = np.zeros((61, 61))
     for j in range(61)  :
         for i in range(61):
             pimult[i, j] = np.sqrt(pi_eq[j] / pi_eq[i])
