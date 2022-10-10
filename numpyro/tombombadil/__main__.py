@@ -71,7 +71,7 @@ def count_codons(file_name):
         for h, s in read_fasta(fasta):
             s = np.frombuffer(s.lower().encode(), dtype=np.int8)
             if X is None:
-                X = np.array((65, s.shape[0]), dtype=np.int32)
+                X = np.zeros((65, s.shape[0]), dtype=np.int32)
             # Set ambiguous bases
             ambig = s[(s!=97) & (s!=99) & (s!=103) & (s!=116)]
             if ambig.any():
