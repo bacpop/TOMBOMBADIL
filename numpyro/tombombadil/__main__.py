@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import sys
 import gzip
 import numpy as np
 
@@ -99,6 +100,7 @@ def count_codons(file_name):
 
 def main():
     options = get_options()
+    sys.stderr.write("Reading alignment...")
     X = count_codons(options.alignment)
     if options.pi is None:
         pi = np.array([1/61 for i in range(61)])

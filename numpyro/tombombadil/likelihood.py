@@ -10,15 +10,16 @@ from .gtr import update_GTR
 # obs_vec: vector of length 61 with counts
 # obs_mat: 61x61 matrix with repeat(obs_vec, 61) [repeated along rows, so a column is invariant]
 
+#TODO: can this be JIT compiled?
 def partial_likelihood(A, obs_mat, N, l, omega, lp, pimat, pimult,
                        pimatinv, scale, phi):
     lik = 0
     for pos in range(l):
         mutmat = update_GTR(A, omega[l], pimult)
 
-        V, Ve = jnp.linalg.eig(mutmat)
-        E = 1 / (1 - 2 * scale * Ve)
-        V_inv = jnp.matmul(V, jnp.diag(E)) # TODO probably can be made more efficient
+        w, v = jnp.linalg.eigh(mutmat, UPLO='U')
+        E = 1 / (1 - 2 * scale * w)
+        V_inv = jnp.matmul(v, jnp.diag(E)) # TODO probably can be made more efficient
 
         # Create m_AB for each ancestral codon
         m_AB = jnp.zeros((61, 61))
@@ -27,7 +28,7 @@ def partial_likelihood(A, obs_mat, N, l, omega, lp, pimat, pimult,
         for i in range(61):
             # Va = rep_matrix(row(V, i), 61)
             # Va should be matrix where rows are repeats of row i of V
-            Va = jnp.reshape(jnp.repeat(jnp.take(V, index), 61), (61, 61)) # Not sure if this is repeat or tile
+            Va = jnp.reshape(jnp.repeat(jnp.take(v, index), 61), (61, 61))
             index += 61
             # m_AB[i, ] = to_row_vector(rows_dot_product(Va, V_inv))
             # Possible with jax.vmap?
