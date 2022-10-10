@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 
-from likelihood import likelihood, transforms
-
 import numpyro
 import numpyro.distributions as dist
 from numpyro.infer import MCMC, NUTS

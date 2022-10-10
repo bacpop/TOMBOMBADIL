@@ -4,7 +4,7 @@ import jax.numpy as jnp
 from jax.scipy.special import logsumexp
 from jax.lax import lgamma, dynamic_update_slice_in_dim, dynamic_slice_in_dim
 
-from .likelihood import update_GTR
+from .gtr import update_GTR
 
 # data at each site is
 # obs_vec: vector of length 61 with counts
