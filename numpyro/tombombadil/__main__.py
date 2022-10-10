@@ -102,7 +102,7 @@ def main():
     X = count_codons(options.alignment)
     if options.pi is None:
         pi = np.array([1/61 for i in range(61)])
-    print(run_sampler(X, pi, options.warmup_it, options.sampling_it))
+    print(run_sampler(X, pi, options.warmup_it, options.sample_it))
 
 if __name__ == "__main__":
     main()
