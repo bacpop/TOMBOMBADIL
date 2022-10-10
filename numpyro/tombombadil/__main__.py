@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 
-import sys
 import gzip
 import numpy as np
 
@@ -61,6 +60,7 @@ def read_fasta(fp):
     if name: yield (name, ''.join(seq))
 
 def count_codons(file_name):
+    n_samples = 0
     with open(file_name, 'rb') as test_f:
         zipped = test_f.read(2) == b'\x1f\x8b'
     if zipped:
@@ -70,6 +70,7 @@ def count_codons(file_name):
     with fh as fasta:
         X = None
         for h, s in read_fasta(fasta):
+            n_samples += 1
             s = np.frombuffer(s.lower().encode(), dtype=np.int8)
             if X is None:
                 X = np.zeros((65, s.shape[0]), dtype=np.int32)
@@ -96,12 +97,20 @@ def count_codons(file_name):
     X = X[col_order,:]
     X = X[0:61, :]
 
-    return X
+    return X, n_samples
 
 def main():
+    import logging
+    logging.basicConfig(
+        format='%(asctime)s %(levelname)-8s %(message)s',
+        level=logging.INFO,
+        datefmt='%Y-%m-%d %H:%M:%S')
+
     options = get_options()
-    sys.stderr.write("Reading alignment...")
-    X = count_codons(options.alignment)
+    logging.info("Reading alignment...")
+    X, n_samples = count_codons(options.alignment)
+    logging.info(f"{n_samples} samples and {X.shape[1]} loci")
+
     if options.pi is None:
         pi = np.array([1/61 for i in range(61)])
     print(run_sampler(X, pi, options.warmup_it, options.sample_it))

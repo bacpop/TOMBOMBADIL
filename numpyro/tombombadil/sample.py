@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import sys
+import logging
 import numpyro
 import numpyro.distributions as dist
 from numpyro.infer import MCMC, NUTS
@@ -75,10 +75,10 @@ def transforms(X, pi_eq):
     return N, l, lp, pimat, pimatinv, pimult, obs_mat, phi
 
 def run_sampler(X, pi_eq, warmup=500, samples=500):
-    sys.stderr.write("Precomputing transforms...")
+    logging.info("Precomputing transforms...")
     N, l, lp, pimat, pimatinv, pimult, obs_mat, phi = transforms(X, pi_eq)
 
-    sys.stderr.write("Running model...")
+    logging.info("Running model...")
     nuts_kernel = NUTS(model)
     mcmc = MCMC(nuts_kernel, num_warmup=warmup, num_samples=samples+warmup)
     rng_key = random.PRNGKey(0)
