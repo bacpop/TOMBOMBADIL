@@ -16,6 +16,7 @@ from .likelihood import gen_alpha
 # so obs_mat is [locus, repeat x 61, codon]
 def model(pi_eq, N, l, pimat, pimatinv, pimult, obs_mat):
     # GTR params (shared)
+    # TODO check that deterministic values are properly passed/traced
     log_alpha = numpyro.sample("log_alpha", dist.Normal(0, 1))
     alpha = numpyro.deterministic("alpha", jax.lax.exp(log_alpha))
     log_beta = numpyro.sample("log_beta", dist.Normal(0, 1))
@@ -39,11 +40,11 @@ def model(pi_eq, N, l, pimat, pimatinv, pimult, obs_mat):
     # Calculate substitution rate matrix
     scale = (theta / 2.0) / meanrate
 
-    with numpyro.plate('locus', l, dim=1) as codons: # minibatch here?
+    with numpyro.plate('locus', l, dim=-1) as codons: # minibatch here?
         omega = numpyro.sample("omega", dist.Exponential(0.5))
-        N_batch = N[codons]
         alpha = gen_alpha(A, omega, pimat, pimult, pimatinv, scale)
-        with numpyro.plate('ancestor', 61, dim=1) as anc, numpyro.poutine.scale(scale=pi_eq):
+        N_batch = N[codons]
+        with numpyro.plate('ancestor', 61, dim=-2) as anc, numpyro.handlers.scale(scale=pi_eq):
             numpyro.sample('obs', dist.DirichletMultinomial(concentration=alpha[anc, :], total_count=N_batch), obs=obs_mat)
 
 # TODO - not all of these may be needed
@@ -68,7 +69,7 @@ def transforms(X, pi_eq):
         phi.append(lgamma(N[l] + 1) - sum([lgamma(x + 1) for x in X[:, l]]))
         obs_mat[l, :, :] = np.broadcast_to(X[:, l], (61, 61))
 
-    return N, l, lp, pimat, pimatinv, pimult, obs_mat, phi
+    return N, len(N), lp, pimat, pimatinv, pimult, obs_mat, phi
 
 def run_sampler(X, pi_eq, warmup=500, samples=500):
     logging.info("Precomputing transforms...")

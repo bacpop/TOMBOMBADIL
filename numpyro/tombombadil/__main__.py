@@ -110,7 +110,7 @@ def main():
     options = get_options()
     logging.info("Reading alignment...")
     X, n_samples = count_codons(options.alignment)
-    logging.info(f"Read {n_samples} samples and {X.shape[1]} loci")
+    logging.info(f"Read {n_samples} samples and {X.shape[1]} codons")
 
     if options.pi is None:
         pi = np.array([1/61 for i in range(61)])
