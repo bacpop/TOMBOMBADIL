@@ -74,7 +74,7 @@ def count_codons(file_name):
             n_samples += 1
             s = np.frombuffer(s.lower().encode(), dtype=np.int8)
             if X is None:
-                X = np.zeros((65, s.shape[0]), dtype=np.int32)
+                X = np.zeros((65, s.shape[0] // 3), dtype=np.int32)
             # Set ambiguous bases
             ambig = s[(s!=97) & (s!=99) & (s!=103) & (s!=116)]
             if ambig.any():
