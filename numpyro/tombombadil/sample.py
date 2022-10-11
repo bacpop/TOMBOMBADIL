@@ -9,28 +9,25 @@ import jax.numpy as jnp
 import jax.random as random
 
 from .gtr import build_GTR
-from .likelihood import partial_likelihood
+from .likelihood import gen_alpha
 
-def model(pi_eq, N, l, lp, pimat, pimatinv, pimult, obs_mat, phi):
+# data at each site is
+# obs_mat: 61x61 matrix with repeat(obs_vec, 61) [repeated along rows, so a column is invariant]
+# so obs_mat is [locus, repeat x 61, codon]
+def model(pi_eq, N, l, pimat, pimatinv, pimult, obs_mat):
     # GTR params (shared)
-    alpha_prior = dist.Normal(0, 1)
-    beta_prior = dist.Normal(0, 1)
-    gamma_prior = dist.Normal(0, 1)
-    delta_prior = dist.Normal(0, 1)
-    epsilon_prior = dist.Normal(0, 1)
-    eta_prior = dist.Normal(0, 1)
-    log_alpha = numpyro.sample("alpha", alpha_prior)
-    log_beta = numpyro.sample("beta", beta_prior)
-    log_gamma = numpyro.sample("gamma", gamma_prior)
-    log_delta = numpyro.sample("delta", delta_prior)
-    log_epsilon = numpyro.sample("epsilon", epsilon_prior)
-    log_eta = numpyro.sample("eta", eta_prior)
-    alpha = jax.lax.exp(log_alpha)
-    beta = jax.lax.exp(log_beta)
-    gamma = jax.lax.exp(log_gamma)
-    delta = jax.lax.exp(log_delta)
-    epsilon = jax.lax.exp(log_epsilon)
-    eta = jax.lax.exp(log_eta)
+    log_alpha = numpyro.sample("log_alpha", dist.Normal(0, 1))
+    alpha = numpyro.deterministic("alpha", jax.lax.exp(log_alpha))
+    log_beta = numpyro.sample("log_beta", dist.Normal(0, 1))
+    beta = numpyro.deterministic("beta", jax.lax.exp(log_beta))
+    log_gamma = numpyro.sample("log_gamma", dist.Normal(0, 1))
+    gamma = numpyro.deterministic("gamma", jax.lax.exp(log_gamma))
+    log_delta = numpyro.sample("log_delta", dist.Normal(0, 1))
+    delta = numpyro.deterministic("delta", jax.lax.exp(log_delta))
+    log_epsilon = numpyro.sample("log_epsilon", dist.Normal(0, 1))
+    epsilon = numpyro.deterministic("epsilon", jax.lax.exp(log_epsilon))
+    log_eta = numpyro.sample("log_eta", dist.Normal(0, 1))
+    eta = numpyro.deterministic("eta", jax.lax.exp(log_eta))
 
     # Rate params
     theta_prior = dist.Gamma(1, 2)
@@ -42,15 +39,14 @@ def model(pi_eq, N, l, lp, pimat, pimatinv, pimult, obs_mat, phi):
     # Calculate substitution rate matrix
     scale = (theta / 2.0) / meanrate
 
-    with numpyro.plate('locus', l) as codons: # minibatch here?
+    with numpyro.plate('locus', l, dim=1) as codons: # minibatch here?
         omega = numpyro.sample("omega", dist.Exponential(0.5))
         N_batch = N[codons]
-        l = len(N_batch)
-        obs_mat_batch = obs_mat[codons, :, :]
-        numpyro.sample('obs', partial_likelihood(A, obs_mat_batch, N_batch, l,
-                                                 omega, lp, pimat, pimult, pimatinv,
-                                                 scale, phi))
+        alpha = gen_alpha(A, omega, pimat, pimult, pimatinv, scale)
+        with numpyro.plate('ancestor', 61, dim=1) as anc, numpyro.poutine.scale(scale=pi_eq):
+            numpyro.sample('obs', dist.DirichletMultinomial(concentration=alpha[anc, :], total_count=N_batch), obs=obs_mat)
 
+# TODO - not all of these may be needed
 def transforms(X, pi_eq):
     import numpy as np
     from math import lgamma
@@ -79,11 +75,13 @@ def run_sampler(X, pi_eq, warmup=500, samples=500):
     N, l, lp, pimat, pimatinv, pimult, obs_mat, phi = transforms(X, pi_eq)
 
     logging.info("Running model...")
+    numpyro.set_platform('cpu')
+    numpyro.set_host_device_count(16)
     nuts_kernel = NUTS(model)
     mcmc = MCMC(nuts_kernel, num_warmup=warmup, num_samples=samples+warmup)
     rng_key = random.PRNGKey(0)
-    results = mcmc.run(rng_key, pi_eq, N, l, lp, pimat, pimatinv, pimult, obs_mat,
-                       phi, extra_fields=('potential_energy',))
+    results = mcmc.run(rng_key, pi_eq, N, l, pimat, pimatinv, pimult, obs_mat,
+                       extra_fields=('potential_energy',))
 
     return results
 
