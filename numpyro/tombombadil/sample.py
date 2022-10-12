@@ -40,17 +40,14 @@ def model(pi_eq, N, l, pimat, pimatinv, pimult, obs_mat):
     # Calculate substitution rate matrix
     scale = (theta / 2.0) / meanrate
 
-    with numpyro.plate('locus', l, dim=-3) as codons: # minibatch here?
+    with numpyro.plate('locus', l, dim=-1): # minibatch here?
         omega = numpyro.sample("omega", dist.Exponential(0.5))
         jax.debug.breakpoint()
         alpha = vmap_gen_alpha(omega, A, pimat, pimult, pimatinv, scale)
         jax.debug.breakpoint()
-        N_batch = N[codons]
-        with numpyro.plate('ancestor', 61, dim=-2) as anc, numpyro.handlers.scale(scale=pi_eq):
+        with numpyro.plate('ancestor', 61, dim=-2), numpyro.handlers.scale(scale=pi_eq):
             jax.debug.breakpoint()
-            alpha_batch = alpha[codons, anc, :]
-            jax.debug.breakpoint()
-            numpyro.sample('obs', dist.DirichletMultinomial(concentration=alpha_batch, total_count=N_batch), obs=obs_mat.unsqueeze(-2))
+            numpyro.sample('obs', dist.DirichletMultinomial(concentration=alpha, total_count=N), obs=obs_mat.unsqueeze(-2))
 
 def transforms(X, pi_eq):
     import numpy as np
