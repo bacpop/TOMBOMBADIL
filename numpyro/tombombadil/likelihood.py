@@ -1,5 +1,5 @@
 
-from jax import jit
+from jax import jit, vmap
 import jax.numpy as jnp
 from jax.lax import dynamic_update_slice_in_dim
 #rom jax.scipy.special import logsumexp
@@ -64,7 +64,7 @@ def gen_alpha(omega, A, pimat, pimult, pimatinv, scale):
     # lik += logsumexp(likposanc)
     #return lik
 
-vmap_gen_alpha = jax.vmap(gen_alpha, (0, None, None, None, None, None), 0)
+vmap_gen_alpha = vmap(gen_alpha, (0, None, None, None, None, None), 0)
 
 
 
