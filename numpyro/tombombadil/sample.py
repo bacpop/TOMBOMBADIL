@@ -9,7 +9,7 @@ import jax.numpy as jnp
 import jax.random as random
 
 from .gtr import build_GTR
-from .likelihood import gen_alpha
+from .likelihood import vmap_gen_alpha
 
 # data at each site is
 # obs_mat: 61x61 matrix with repeat(obs_vec, 61) [repeated along rows, so a column is invariant]
@@ -42,9 +42,12 @@ def model(pi_eq, N, l, pimat, pimatinv, pimult, obs_mat):
 
     with numpyro.plate('locus', l, dim=-1) as codons: # minibatch here?
         omega = numpyro.sample("omega", dist.Exponential(0.5))
-        alpha = gen_alpha(A, omega, pimat, pimult, pimatinv, scale)
+        jax.debug.breakpoint()
+        alpha = vmap_gen_alpha(A, omega, pimat, pimult, pimatinv, scale)
+        jax.debug.breakpoint()
         N_batch = N[codons]
         with numpyro.plate('ancestor', 61, dim=-2) as anc, numpyro.handlers.scale(scale=pi_eq):
+            jax.debug.breakpoint()
             numpyro.sample('obs', dist.DirichletMultinomial(concentration=alpha[anc, :], total_count=N_batch), obs=obs_mat)
 
 # TODO - not all of these may be needed
