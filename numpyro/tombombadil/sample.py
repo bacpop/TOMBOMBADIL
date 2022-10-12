@@ -12,8 +12,8 @@ from .gtr import build_GTR
 from .likelihood import vmap_gen_alpha
 
 # data at each site is
-# obs_mat: 61x61 matrix with repeat(obs_vec, 61) [repeated along rows, so a column is invariant]
-# so obs_mat is [locus, repeat x 61, codon]
+# obs_mat: 61xl matrix
+# so obs_mat is [codon, locus]
 def model(pi_eq, N, l, pimat, pimatinv, pimult, obs_mat):
     # GTR params (shared)
     # TODO check that deterministic values are properly passed/traced
@@ -40,7 +40,7 @@ def model(pi_eq, N, l, pimat, pimatinv, pimult, obs_mat):
     # Calculate substitution rate matrix
     scale = (theta / 2.0) / meanrate
 
-    with numpyro.plate('locus', l, dim=-1) as codons: # minibatch here?
+    with numpyro.plate('locus', l, dim=-3) as codons: # minibatch here?
         omega = numpyro.sample("omega", dist.Exponential(0.5))
         jax.debug.breakpoint()
         alpha = vmap_gen_alpha(omega, A, pimat, pimult, pimatinv, scale)
@@ -48,16 +48,15 @@ def model(pi_eq, N, l, pimat, pimatinv, pimult, obs_mat):
         N_batch = N[codons]
         with numpyro.plate('ancestor', 61, dim=-2) as anc, numpyro.handlers.scale(scale=pi_eq):
             jax.debug.breakpoint()
-            numpyro.sample('obs', dist.DirichletMultinomial(concentration=alpha[anc, :], total_count=N_batch), obs=obs_mat)
+            alpha_batch = alpha[codons, anc, :]
+            jax.debug.breakpoint()
+            numpyro.sample('obs', dist.DirichletMultinomial(concentration=alpha_batch, total_count=N_batch), obs=obs_mat.unsqueeze(-2))
 
-# TODO - not all of these may be needed
 def transforms(X, pi_eq):
     import numpy as np
-    from math import lgamma
     N = np.sum(X, 0)
 
     # pi transforms
-    lp = np.array(np.log(pi_eq))
     pimat = np.diag(np.sqrt(pi_eq))
     pimatinv = np.diag(np.divide(1, np.sqrt(pi_eq)))
 
@@ -66,25 +65,19 @@ def transforms(X, pi_eq):
         for i in range(61):
             pimult[i, j] = np.sqrt(pi_eq[j] / pi_eq[i])
 
-    phi = []
-    obs_mat = np.empty((X.shape[1], 61, 61))
-    for l in range(X.shape[1]):
-        phi.append(lgamma(N[l] + 1) - sum([lgamma(x + 1) for x in X[:, l]]))
-        obs_mat[l, :, :] = np.broadcast_to(X[:, l], (61, 61))
-
-    return N, len(N), lp, pimat, pimatinv, pimult, obs_mat, phi
+    return N, len(N), pimat, pimatinv, pimult
 
 def run_sampler(X, pi_eq, warmup=500, samples=500):
     logging.info("Precomputing transforms...")
-    N, l, lp, pimat, pimatinv, pimult, obs_mat, phi = transforms(X, pi_eq)
+    N, l, pimat, pimatinv, pimult = transforms(X, pi_eq)
 
     logging.info("Running model...")
     numpyro.set_platform('cpu')
     numpyro.set_host_device_count(16)
     nuts_kernel = NUTS(model)
-    mcmc = MCMC(nuts_kernel, num_warmup=warmup, num_samples=samples+warmup)
+    mcmc = MCMC(nuts_kernel, num_warmup=warmup, num_samples=samples + warmup)
     rng_key = random.PRNGKey(0)
-    results = mcmc.run(rng_key, pi_eq, N, l, pimat, pimatinv, pimult, obs_mat,
+    results = mcmc.run(rng_key, pi_eq, N, l, pimat, pimatinv, pimult, X,
                        extra_fields=('potential_energy',))
 
     return results
