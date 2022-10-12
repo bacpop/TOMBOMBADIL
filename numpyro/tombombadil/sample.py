@@ -43,7 +43,7 @@ def model(pi_eq, N, l, pimat, pimatinv, pimult, obs_mat):
     with numpyro.plate('locus', l, dim=-1) as codons: # minibatch here?
         omega = numpyro.sample("omega", dist.Exponential(0.5))
         jax.debug.breakpoint()
-        alpha = vmap_gen_alpha(A, omega, pimat, pimult, pimatinv, scale)
+        alpha = vmap_gen_alpha(omega, A, pimat, pimult, pimatinv, scale)
         jax.debug.breakpoint()
         N_batch = N[codons]
         with numpyro.plate('ancestor', 61, dim=-2) as anc, numpyro.handlers.scale(scale=pi_eq):
