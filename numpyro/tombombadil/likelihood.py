@@ -29,7 +29,9 @@ def gen_alpha(omega, A, pimat, pimult, pimatinv, scale):
         row = jnp.reshape(jnp.einsum('ij,ij->i', Va, V_inv), (-1, 1))
         # If using option 1 below
         # row = jnp.divide(row, sqp.at[i].get())
-        dynamic_update_slice_in_dim(m_AB, row, i, 0)
+
+        # Note, this is adding into columns, so removes the transpose from the matmul below
+        m_AB = dynamic_update_slice_in_dim(m_AB, row, i, 1)
 
     # Add equilibrium frequencies (option 1)
     #for i in range(61):
@@ -37,7 +39,7 @@ def gen_alpha(omega, A, pimat, pimult, pimatinv, scale):
     #    dynamic_update_slice_in_dim(m_AB, col, i, 1)
 
     # Add equilibrium frequencies (option 2)
-    m_AB = jnp.matmul(jnp.matmul(m_AB.T, pimatinv).T, pimat)
+    m_AB = jnp.matmul(jnp.matmul(m_AB, pimatinv).T, pimat)
 
     # Normalise by m_AA
     m_AA = jnp.reshape(jnp.repeat(jnp.diag(m_AB), 61), (61, 61)) # Creates matrix with diagonals copied along each row

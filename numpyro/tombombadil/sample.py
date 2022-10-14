@@ -71,7 +71,7 @@ def run_sampler(X, pi_eq, warmup=500, samples=500, platform='cpu', threads=8):
     # this doesn't do what you might think, it's more like having multiple GPUs
     #numpyro.set_host_device_count(threads)
     nuts_kernel = NUTS(model)
-    mcmc = MCMC(nuts_kernel, num_warmup=warmup, num_samples=samples + warmup)
+    mcmc = MCMC(nuts_kernel, num_warmup=warmup, num_samples=samples)
     rng_key = random.PRNGKey(0)
     mcmc.run(rng_key, pi_eq, N, l, pimat, pimatinv, pimult, obs_mat,
              extra_fields=('potential_energy',))
