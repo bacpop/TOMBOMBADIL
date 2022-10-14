@@ -54,9 +54,9 @@ def transforms(X, pi_eq):
         for i in range(61):
             pimult[i, j] = np.sqrt(pi_eq[j] / pi_eq[i])
 
-    obs_mat = np.empty((X.shape[1], 61, 61))
+    obs_mat = np.empty((n_loci, 61, 61))
     N_tile = np.empty((n_loci, 61))
-    for l in range(X.shape[1]):
+    for l in range(n_loci):
         obs_mat[l, :, :] = np.broadcast_to(X[:, l], (61, 61))
         N_tile[l, :] = N[l]
 
