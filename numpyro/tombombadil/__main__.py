@@ -121,7 +121,7 @@ def main():
     if options.pi is None:
         pi = np.array([1/61 for i in range(61)])
 
-   run_sampler(X, pi, options.warmup_it, options.sample_it, options.platform, options.cpus)
+    run_sampler(X, pi, options.warmup_it, options.sample_it, options.platform, options.cpus)
 
 if __name__ == "__main__":
     main()

@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import logging
+import numpy as np
 import numpyro
 import numpyro.distributions as dist
 from numpyro.infer import MCMC, NUTS
@@ -75,5 +76,7 @@ def run_sampler(X, pi_eq, warmup=500, samples=500, platform='cpu', threads=8):
     mcmc.run(rng_key, pi_eq, N, l, pimat, pimatinv, pimult, obs_mat,
              extra_fields=('potential_energy',))
     mcmc.print_summary()
+    pe = np.mean(-mcmc.get_extra_fields()['potential_energy'])
+    print(f'Expected log joint density: {pe}')
 
 
