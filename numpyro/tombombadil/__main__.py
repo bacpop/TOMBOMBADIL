@@ -42,6 +42,12 @@ def get_options():
     sGroup.add_argument('--warmup-it', type=int, default=500,
                         help='Warmup iterations')
 
+    hGroup = parser.add_argument_group('Hardware options')
+    sGroup.add_argument('--platform', choices=['cpu', 'gpu', 'tpu'], default='cpu',
+                        help='Which hardware/device to run on')
+    sGroup.add_argument('--cpus', type=int, default=8,
+                        help='Number of CPU cores to use')
+
     other = parser.add_argument_group('Other options')
     other.add_argument('--version', action='version',
                        version='%(prog)s '+__version__)
@@ -114,7 +120,8 @@ def main():
 
     if options.pi is None:
         pi = np.array([1/61 for i in range(61)])
-    print(run_sampler(X, pi, options.warmup_it, options.sample_it))
+
+   run_sampler(X, pi, options.warmup_it, options.sample_it, options.platform, options.cpus)
 
 if __name__ == "__main__":
     main()

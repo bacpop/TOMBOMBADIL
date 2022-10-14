@@ -2,18 +2,17 @@
 from jax import jit, vmap
 import jax.numpy as jnp
 from jax.lax import dynamic_update_slice_in_dim
-#rom jax.scipy.special import logsumexp
-#from jax.lax import lgamma, dynamic_update_slice_in_dim, dynamic_slice_in_dim
 
 from .gtr import update_GTR
+vmap_update_GTR = vmap(update_GTR, (None, 0, None), 0)
 
 @jit
 def gen_alpha(omega, A, pimat, pimult, pimatinv, scale):
-    mutmat = update_GTR(A, omega, pimult)
+    mutmat = vmap_update_GTR(A, omega, pimult)
 
-    w, v = jnp.linalg.eigh(mutmat, UPLO='U')
-    E = 1 / (1 - 2 * scale * w)
-    V_inv = jnp.matmul(v, jnp.diag(E)) # TODO probably can be made more efficient
+    w, v = jnp.linalg.eigh(mutmat, UPLO='U') # NB this runs on a batch of matrices over first dim, hence reshape below
+    E = 1 / (1 - 2 * scale * jnp.reshape(w, (61)))
+    V_inv = jnp.matmul(jnp.reshape(v, (61, 61)), jnp.diag(E)) # TODO probably can be made more efficient
 
     # Create m_AB for each ancestral codon
     m_AB = jnp.zeros((61, 61))
@@ -46,23 +45,6 @@ def gen_alpha(omega, A, pimat, pimult, pimatinv, scale):
 
     muti = m_AB + jnp.eye(61, 61)
     return muti
-
-    ## 'manual' multinomial
-    # lgmuti = lgamma(muti)
-    # # ttheta = m_AB * ones; # I think this is rowSum()?
-    # ttheta = jnp.sum(m_AB, 0)
-    # ltheta = jnp.log(ttheta)
-    # lgtheta = lgamma(ttheta)
-
-    # poslp = lgtheta - lgamma(N[pos] + ttheta) - jnp.log(N[pos] + ttheta) + ltheta
-
-    # gam_mat = lgamma(obs_mat[pos] + muti) - lgmuti
-
-    # likposanc = lp
-    # likposanc += jnp.sum(gam_mat, 0)
-    # likposanc += poslp + phi[pos]
-    # lik += logsumexp(likposanc)
-    #return lik
 
 vmap_gen_alpha = vmap(gen_alpha, (0, None, None, None, None, None), 0)
 
