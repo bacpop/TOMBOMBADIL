@@ -33,12 +33,22 @@ def model(pi_eq, N, l, pimat, pimatinv, pimult, obs_mat):
     scale = (theta / 2.0) / meanrate
 
     # Over loci
-    with numpyro.plate('locus', l, dim=-2): # minibatch here?
+    loci = numpyro.plate('locus', l, dim=-2)
+    with loci:
         omega = numpyro.sample("omega", dist.Exponential(0.5))
         alpha = vmap_gen_alpha(omega, A, pimat, pimult, pimatinv, scale)
-        # Over ancestors
-        with numpyro.plate('ancestor', 61, dim=-1), numpyro.handlers.scale(scale=pi_eq):
-            numpyro.sample('obs', dist.DirichletMultinomial(concentration=alpha, total_count=N), obs=obs_mat)
+
+    log_prob = numpyro.contrib.control_flow.scan(count_prob, 0, alpha, length=61, reverse=False, history=0)
+    log_prob = logsumexp(log_prob + log_pi, axis=0, keepdims=True) # log pi probably needs broadcasting
+    numpyro.factor("forward_log_prob", log_prob)
+
+# TODO need a closure so signature is f(carry, alpha)
+def count_prob(loci, alpha, N, obs_mat):
+    with loci:
+        obs = jnp.log(numpyro.sample('obs', dist.DirichletMultinomial(concentration=alpha, total_count=N), obs=obs_mat))
+    return obs
+
+# TODO the sparse multinomial
 
 def transforms(X, pi_eq):
     import numpy as np
