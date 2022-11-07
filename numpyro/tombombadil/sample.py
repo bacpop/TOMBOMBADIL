@@ -84,7 +84,7 @@ def run_sampler(X, pi_eq, warmup=500, samples=500, platform='cpu', threads=8):
     mcmc = MCMC(nuts_kernel, num_warmup=warmup, num_samples=samples)
     rng_key = random.PRNGKey(0)
     mcmc.run(rng_key, pi_eq, N, l, pimat, pimatinv, pimult, obs_mat,
-             extra_fields=('potential_energy',))
+             extra_fields=('potential_energy',), chain_method="vectorized")
     mcmc.print_summary()
     pe = np.mean(-mcmc.get_extra_fields()['potential_energy'])
     print(f'Expected log joint density: {pe}')
