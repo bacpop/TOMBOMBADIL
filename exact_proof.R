@@ -32,7 +32,7 @@ mod_test <- cmdstan_model("models/exact.stan",
 
 fit <- mod_test$sample(
   data = data_list,
-  iter_warmup = 0, 
+  iter_warmup = 1, 
   iter_sampling = 1,
   threads_per_chain = 8,
   chains = 1, 
