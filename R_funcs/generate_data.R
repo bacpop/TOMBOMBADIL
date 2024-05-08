@@ -49,16 +49,16 @@ generate_data <- function(data, cores = 1){
   # Create output
   out_list <- list()
   out_list$X <- X
-  out_list$l <- nrow(X)
+  out_list$gene_length <- nrow(X)
   out_list$n <- length(res)
-  out_list$N <- rowSums(out_list$X)
+  out_list$n_samples <- rowSums(out_list$X)
   out_list$pi_eq <- rep(1 / 61, 61)
   out_list$grainsize <- 1
   
   ## Shard maths
   nshards <- cores
-  out_list$M <- nshards
-  ncodon <- out_list$l
+  out_list$n_shards <- nshards
+  ncodon <- out_list$gene_length
   base_n <- floor(ncodon/ nshards)
   spare <- ncodon - (nshards * base_n)
   n_per_shard <- c(rep(base_n + 1, spare), rep(base_n, nshards - spare))
@@ -74,6 +74,18 @@ generate_data <- function(data, cores = 1){
   out_list$shard_ends <- shard_ends
   out_list$n_per_shard <- n_per_shard
   out_list$max_per_shard <- max(n_per_shard)
+  
+  Y <- array(dim = c(out_list$n_shards, 61 * out_list$max_per_shard))
+  for(m in 1:out_list$n_shards){
+    subX <- as.vector(t(out_list$X[out_list$shard_starts[m]:out_list$shard_ends[m], ]))
+    subX <- c(subX, rep(-999, (out_list$max_per_shard - out_list$n_per_shard[m]) * 61))
+    print(tail(subX))
+    print(length(subX))
+    Y[m, ] <- subX
+  }
+  
+  Y <- cbind(Y, out_list$n_per_shard)
+  out_list$obs_array_int <- Y
   
   return(out_list)
 }

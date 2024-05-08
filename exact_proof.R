@@ -42,3 +42,6 @@ fit <- mod_test$sample(
 
 # We want the value -1958.48
 as.vector(fit$draws("lik"))
+
+
+as.vector(fit$draws("site_lik"))

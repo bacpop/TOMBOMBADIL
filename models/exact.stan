@@ -4,10 +4,9 @@ functions {
 
 data {
   row_vector[61] pi_eq;
-  int <lower = 1> l; // gene length
-  array[l, 61] int X; // codon frequencies at each locus in the gene
-  array [l] int N;
-  int <lower = 1> M; // number of shards
+  int <lower = 1> gene_length; // gene length
+  array[gene_length, 61] int X; // codon frequencies at each locus in the gene
+  array [gene_length] int n_samples;
   real <lower = 0> kappa;
   real <lower = 0> omega;
   real <lower = 0> theta;
@@ -15,8 +14,8 @@ data {
 
 transformed data{
   vector[61] lp = to_vector(log(pi_eq));
-  array[l] matrix[61, 61] obs_mat;
-  array[l] vector[61] obs_vec;
+  array[gene_length] matrix[61, 61] obs_mat;
+  array[gene_length] vector[61] obs_vec;
   vector[61] ones = rep_vector(1, 61);
   matrix[61, 61] pimat = diag_matrix(sqrt(to_vector(pi_eq)));
   matrix[61, 61] pimatinv = diag_matrix(inv(sqrt(to_vector(pi_eq))));
@@ -28,7 +27,7 @@ transformed data{
     }
   }
    
-  for(i in 1:l){
+  for(i in 1:gene_length){
     obs_mat[i] = rep_matrix(to_row_vector(X[i, ]), 61);
     obs_vec[i] = to_vector(X[i, ]);
   }
@@ -44,6 +43,7 @@ generated quantities {
   matrix[61, 61] A;
   real meanrate = 0;
   real scale;
+  vector[gene_length] site_lik;
   real lik = 0; // log(1)
   vector[61] likposanc;
   real phi;
@@ -98,10 +98,10 @@ generated quantities {
   ltheta = log(ttheta);
   lgtheta = lgamma(ttheta);
 
-  for(pos in 1:l) {
+  for(pos in 1:gene_length) {
 
     // Calculate parts same for all ancestors
-    Np = N[pos];
+    Np = n_samples[pos];
     phi = lgamma(Np + 1) - sum(lgamma(obs_vec[pos] + 1));
 
     poslp = lgtheta - lgamma(Np + ttheta) - log(Np + ttheta) + ltheta;
@@ -113,6 +113,7 @@ generated quantities {
     likposanc += poslp + phi;
 
     lik += log_sum_exp(likposanc);
+    site_lik[pos] = log_sum_exp(likposanc);
   }
 }
 
