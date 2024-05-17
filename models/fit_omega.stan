@@ -6,7 +6,6 @@ functions {
 data {
   row_vector[61] pi_eq;
   int <lower = 1> gene_length; // gene length
-  array[gene_length, 61] int X; // codon frequencies at each locus in the gene
   array [gene_length] int n_samples;
   int <lower = 1> n_shards; // number of shards
   array[n_shards] int n_per_shard;
@@ -39,7 +38,6 @@ parameters {
 
   // How you parameterise omega will depend
   real <lower = 0> omega;
-
 }
 
 transformed parameters {
