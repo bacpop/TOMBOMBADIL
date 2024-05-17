@@ -15,4 +15,6 @@ mcmc_hist(results)
 model_fit$summary()
 
 
-
+var_inf <- mod$variational(data = data_list, threads = 8)
+var_inf$draws(variables = c("omega", "kappa", "theta"))
+var_inf$summary(variables = c("omega", "kappa", "theta"))

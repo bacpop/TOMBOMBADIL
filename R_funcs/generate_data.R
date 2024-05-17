@@ -79,8 +79,8 @@ generate_data <- function(data, cores = 1){
   for(m in 1:out_list$n_shards){
     subX <- as.vector(t(out_list$X[out_list$shard_starts[m]:out_list$shard_ends[m], ]))
     subX <- c(subX, rep(-999, (out_list$max_per_shard - out_list$n_per_shard[m]) * 61))
-    print(tail(subX))
-    print(length(subX))
+    # print(tail(subX))
+    # print(length(subX))
     Y[m, ] <- subX
   }
   

@@ -89,10 +89,6 @@ model {
   target += log_lik;
   
   // Parameter priors
-  // omega ~ normal(0, 1);
-  // kappa ~ normal(0, 1);
-  // theta ~ normal(0, 1);
-  
   omega ~ exponential(2);
   kappa ~ exponential(2);
   theta ~ exponential(2);
