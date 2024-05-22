@@ -1,6 +1,5 @@
 functions {
 #include functions/NY98.stan
-#include functions/likelihoods.stan
 }
 
 data {
@@ -13,6 +12,8 @@ data {
 } 
 
 transformed data {
+  // These things are here because it's possible to only calculate them once
+  // at the start of the MCMC
   vector[61] lp = to_vector(log(pi_eq));
   matrix[61, 61] pimat = diag_matrix(sqrt(to_vector(pi_eq)));
   matrix[61, 61] pimatinv = diag_matrix(inv(sqrt(to_vector(pi_eq))));
@@ -30,8 +31,8 @@ transformed data {
 }
  
 parameters {
-  real <lower = 0> kappa;
-  real <lower = 0> theta;
+  real <lower = 0> kappa; 
+  real <lower = 0> theta; // mu in the paper
   real <lower = 0> omega;
 }
 
@@ -72,6 +73,7 @@ model {
   m_AB = m_AB';
   
   // Likelihood calculation
+  // observed_codon ~ multinomial_dirichlet(probabilities calculated above)
   matrix[61, 61] muti = add_diag(m_AB, 1);
   matrix[61, 61] lgmuti = lgamma(muti);
   vector[61] ttheta = m_AB * ones;
@@ -81,11 +83,13 @@ model {
   
   matrix[61, 61] gam_mat = lgamma(observed_mat + muti) - lgmuti;
 
+  // Vector of likelihood for each ancestral codon
   vector[61] likposanc = lp;
   likposanc += gam_mat * ones;
   likposanc += poslp + phi;
 
   real log_lik = log_sum_exp(likposanc);
+  // total likelihood
   target += log_lik;
   
   // Parameter priors
