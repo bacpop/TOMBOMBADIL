@@ -6,9 +6,6 @@ data {
   row_vector[61] pi_eq;
   int <lower = 1> n_genomes;
   vector[61] n_observed;
-  // real <lower = 0> kappa;
-  // real <lower = 0> omega;
-  // real <lower = 0> theta;
 } 
 
 transformed data {
@@ -31,9 +28,15 @@ transformed data {
 }
  
 parameters {
-  real <lower = 0> kappa; 
-  real <lower = 0> theta; // mu in the paper
-  real <lower = 0> omega;
+  real l_kappa; 
+  real l_theta; // mu in the paper
+  real l_omega;
+}
+
+transformed parameters {
+  real kappa = exp(l_kappa);
+  real theta = exp(l_theta);
+  real omega = exp(l_omega);
 }
 
 model {
@@ -93,9 +96,9 @@ model {
   target += log_lik;
   
   // Parameter priors
-  omega ~ exponential(2);
-  kappa ~ exponential(2);
-  theta ~ exponential(2);
+  l_omega ~ std_normal();
+  l_kappa ~ std_normal();
+  l_theta ~ std_normal();
   
   
 }
