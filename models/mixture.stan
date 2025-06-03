@@ -63,7 +63,7 @@ model {
   obs_array_real, obs_array_int));
 
   for(i in 1:gene_length){
-    target += log_sum_exp(log(0.01) + normal_lpdf(omega[i] | 0.1, 1), log(0.99) + normal_lpdf(omega[i] | 1.5, 1));
+    target += log_sum_exp(log(0.99) + normal_lpdf(omega[i] | 0.1, 1), log(0.01) + normal_lpdf(omega[i] | 1.5, 1));
   }
   // omega ~ normal(0, 1);
   kappa ~ normal(0, 1);
