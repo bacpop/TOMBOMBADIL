@@ -46,14 +46,19 @@ generate_data <- function(data, cores = 1){
   X <- matrix(rtx$V1, byrow = TRUE, ncol = 61)
   colnames(X) <- tripletNames_noSTO
   
+  # We need to filter out codons where there are no mutations at all
+  keepers <-  which(apply(X, MARGIN = 1, max) != rowSums(X))
+  
+  
   # Create output
   out_list <- list()
-  out_list$X <- X
-  out_list$gene_length <- nrow(X)
+  out_list$X <- X[keepers, ]
+  out_list$gene_length <- length(keepers)
   out_list$n <- length(res)
   out_list$n_samples <- rowSums(out_list$X)
   out_list$pi_eq <- rep(1 / 61, 61)
   out_list$grainsize <- 1
+  out_list$original_index <- keepers
   
   ## Shard maths
   nshards <- cores
