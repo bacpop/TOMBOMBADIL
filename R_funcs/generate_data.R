@@ -34,8 +34,11 @@ generate_data <- function(data, cores = 1){
   
   # Convert matrix to data.table and count codons at each location
   tx <- data.table::as.data.table(mx)
+  print(is.data.table(tx))
   tx$sample <- 1:nrow(tx)
-  tx <- melt(tx, id.vars = "sample")
+  print(is.data.table(tx))
+  tx <- melt.data.table(tx, id.vars = "sample") # use melt.data.table instead of melt
+  print(is.data.table(tx))
   tx[, site := as.numeric(variable)]
   tx <- tx[, .(sample, site, codon = value)]
   tx$codon <- factor(tx$codon, levels = tripletNames_noSTO)
