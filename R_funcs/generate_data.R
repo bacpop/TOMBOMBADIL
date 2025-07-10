@@ -47,18 +47,19 @@ generate_data <- function(data, cores = 1){
   colnames(X) <- tripletNames_noSTO
   
   # We need to filter out codons where there are no mutations at all
-  keepers <-  which(apply(X, MARGIN = 1, max) != rowSums(X))
+  # Not sure if we actually need to anymore
+  # keepers <-  which(apply(X, MARGIN = 1, max) != rowSums(X))
   
   
   # Create output
   out_list <- list()
-  out_list$X <- X[keepers, ]
-  out_list$gene_length <- length(keepers)
+  out_list$X <- X
+  out_list$gene_length <- nrow(out_list$X)
   out_list$n <- length(res)
   out_list$n_samples <- rowSums(out_list$X)
   out_list$pi_eq <- rep(1 / 61, 61)
   out_list$grainsize <- 1
-  out_list$original_index <- keepers
+  # out_list$original_index <- keepers
   
   ## Shard maths
   nshards <- cores
@@ -74,7 +75,7 @@ generate_data <- function(data, cores = 1){
     shard_starts[i] <- shard_ends[i - 1] + 1
     shard_ends[i] <- shard_starts[i] + n_per_shard[i] - 1
   }
-
+  
   out_list$shard_starts <- shard_starts
   out_list$shard_ends <- shard_ends
   out_list$n_per_shard <- n_per_shard
@@ -127,19 +128,19 @@ extract_res <- function(fit, mod_name = "unnamed"){
 
 initfn <- function(){
   out <- list(kap = rtruncnorm(n = 1, a = 0, mean = 0, sd = 1),
-       th = rnorm(1, log(0.1), 1),
-       alp = rnorm(1, log(0.1), 1),
-       bet = rnorm(1, log(0.1), 1),
-       gam = rnorm(1, log(0.1), 1),
-       del = rnorm(1, log(0.1), 1),
-       eps = rnorm(1, log(0.1), 1),
-       et = rnorm(1, log(0.1), 1),
-       lambda = runif(1, 0, 1),
-       # om_raw = rnorm(n = data_list$l, mean = -1, sd = 0.25),
-       om_raw = rtruncnorm(n = data_list$l, a = 0, mean = 0, sd = 0.1),
-       omega = rtruncnorm(n = data_list$l, a = 0, mean = 0, sd = 0.5),
-       om_mean = rtruncnorm(n = 1, a = 0, mean = 0, sd = 1),
-       om_sd = rtruncnorm(n = 1, a = 0, mean = 0, sd = 1))
+              th = rnorm(1, log(0.1), 1),
+              alp = rnorm(1, log(0.1), 1),
+              bet = rnorm(1, log(0.1), 1),
+              gam = rnorm(1, log(0.1), 1),
+              del = rnorm(1, log(0.1), 1),
+              eps = rnorm(1, log(0.1), 1),
+              et = rnorm(1, log(0.1), 1),
+              lambda = runif(1, 0, 1),
+              # om_raw = rnorm(n = data_list$l, mean = -1, sd = 0.25),
+              om_raw = rtruncnorm(n = data_list$l, a = 0, mean = 0, sd = 0.1),
+              omega = rtruncnorm(n = data_list$l, a = 0, mean = 0, sd = 0.5),
+              om_mean = rtruncnorm(n = 1, a = 0, mean = 0, sd = 1),
+              om_sd = rtruncnorm(n = 1, a = 0, mean = 0, sd = 1))
   out$lambda[2] <- 1 - out$lambda[1]
   return(out)
 }
