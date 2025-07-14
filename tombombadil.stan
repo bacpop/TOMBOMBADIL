@@ -2,6 +2,7 @@ functions {
 #include NY98.stan
 #include GTR.stan
 #include likelihoods.stan
+#include constant_likelihood.stan
 }
 
 data {
@@ -90,8 +91,14 @@ transformed parameters {
 model {
   // Different Dirichlet-Multinomial likelihoods and paramtere priors depending on substitution model used
   if(GTR == 1){
-    target += sum(map_rect(likelihood_GTR, shard_shared_params, shard_diff_params,
+    if(omega_varies == 1 || omega_hierarchical == 1){
+      target += sum(map_rect(likelihood_GTR, shard_shared_params, shard_diff_params,
   obs_array_real, obs_array_int));
+    } else {
+      target += sum(map_rect(likelihood_constant_GTR, shard_shared_params, shard_diff_params,
+  obs_array_real, obs_array_int));
+    }
+    
     alpha ~ std_normal() T[0, ];
     beta ~ std_normal() T[0, ];
     gamma ~ std_normal() T[0, ];
@@ -99,8 +106,13 @@ model {
     epsilon ~ std_normal() T[0, ];
     eta ~ std_normal() T[0, ];
   } else {
+    if(omega_varies == 1 || omega_hierarchical == 1){
       target += sum(map_rect(likelihood_NY98, shard_shared_params, shard_diff_params,
   obs_array_real, obs_array_int));
+    } else {
+      target += sum(map_rect(likelihood_constant_NY98, shard_shared_params, shard_diff_params,
+  obs_array_real, obs_array_int));
+    }
       kappa ~ std_normal() T[0, ];
   }
   
