@@ -1,7 +1,8 @@
 functions {
-#include NY98.stan
-#include GTR.stan
-#include likelihoods.stan
+  #include NY98.stan
+  #include GTR.stan
+  #include likelihoods.stan
+  #include constant_likelihood.stan
 }
 
 data {
@@ -17,8 +18,13 @@ data {
   int<lower=0, upper=1> GTR; // GTR substition matrix flag
   int<lower=0, upper=1> omega_varies; // flag for omega varying by loci or not
   int<lower=0, upper=1> omega_hierarchical; // flag for varying omega to be iid or hierarchical
+  int<lower=0, upper=1> omega_mixture; // flag for mixture model
+  int<lower=1> K; // number of mixture components
+  vector[K] mixprop; // mixing proportions
+  vector[K] mix_mean;
+  vector[K] mix_var;
 } 
- 
+
 transformed data{
   // integer array of codon observations at each location - x_i
   // This is a no. shards * no. sites in shard * 61 array
@@ -31,7 +37,8 @@ transformed data{
     obs_array_real[i, 1:61] = to_array_1d(pi_eq);
   }
   int NY98 = GTR == 0 ? 1 : 0;
-  int omega_length = omega_varies == 1 || omega_hierarchical == 1 ? gene_length : 1;
+  int omega_length = omega_varies == 1 || omega_hierarchical == 1 || omega_mixture == 1 ? gene_length : 1;
+  vector[K] lmp = log(mixprop);
 }
 
 parameters {
@@ -68,10 +75,10 @@ transformed parameters {
   } else {
     shard_shared_params[2] = kappa[1];
   }
-   
+  
   // Pack omega into a vector to give to shards depending on its size
   vector[gene_length] omega_vec;
-  if(omega_varies == 1 || omega_hierarchical == 1){
+  if(omega_varies == 1 || omega_hierarchical == 1 || omega_mixture == 1){
     omega_vec = omega;
   } else {
     omega_vec = rep_vector(omega[1], gene_length);
@@ -85,13 +92,27 @@ transformed parameters {
     rep_array(0, max_per_shard - n_per_shard[i]));
     shard_diff_params[i] = to_vector(temp_vec);
   }
+  array[gene_length] vector[K] mix_ll;
+  if(omega_mixture ==1) {
+    for(i in 1:gene_length){
+      for(j in 1:K){
+        mix_ll[i, j] = lmp[j] + normal_lpdf(omega[i] | mix_mean[j], mix_var[j]);
+      }
+    }
+  }
 }
 
 model {
   // Different Dirichlet-Multinomial likelihoods and paramtere priors depending on substitution model used
   if(GTR == 1){
-    target += sum(map_rect(likelihood_GTR, shard_shared_params, shard_diff_params,
-  obs_array_real, obs_array_int));
+    if(omega_varies == 1 || omega_hierarchical == 1 || omega_mixture == 1){
+      target += sum(map_rect(likelihood_GTR, shard_shared_params, shard_diff_params,
+      obs_array_real, obs_array_int));
+    } else {
+      target += sum(map_rect(likelihood_constant_GTR, shard_shared_params, shard_diff_params,
+      obs_array_real, obs_array_int));
+    }
+    
     alpha ~ std_normal() T[0, ];
     beta ~ std_normal() T[0, ];
     gamma ~ std_normal() T[0, ];
@@ -99,9 +120,15 @@ model {
     epsilon ~ std_normal() T[0, ];
     eta ~ std_normal() T[0, ];
   } else {
+    if(omega_varies == 1 || omega_hierarchical == 1 || omega_mixture == 1){
       target += sum(map_rect(likelihood_NY98, shard_shared_params, shard_diff_params,
-  obs_array_real, obs_array_int));
-      kappa ~ std_normal() T[0, ];
+      obs_array_real, obs_array_int));
+    } else {
+      target += sum(map_rect(likelihood_constant_NY98, shard_shared_params, shard_diff_params,
+      obs_array_real, obs_array_int));
+    }
+    
+    kappa ~ std_normal() T[0, ];
   }
   
   // Parameter shared by all models
@@ -114,7 +141,20 @@ model {
     for(i in 1:gene_length){
       omega[i] ~ lognormal(omega_mean, omega_var);
     }
+  } else if(omega_mixture == 1) {
+    for(i in 1:gene_length){
+      target += log_sum_exp(mix_ll[i]);
+    }
   } else {
     omega ~ lognormal(log(0.5), 1);
+  }
+}
+
+generated quantities {
+  vector[gene_length] pr;
+  if(omega_mixture == 1){
+    for(i in 1:gene_length){
+      pr[i] = categorical_logit_rng(mix_ll[i]);
+    }
   }
 }
