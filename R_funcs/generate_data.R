@@ -93,6 +93,11 @@ generate_data <- function(data, cores = 1){
   Y <- cbind(Y, out_list$n_per_shard)
   out_list$obs_array_int <- Y
   
+  out_list$K <- 2
+  out_list$mixprop <- c(0.01, 0.99)
+  out_list$mix_mean <- c(1.5, 0.5)
+  out_list$mix_var <- c(1, 1)
+  
   return(out_list)
 }
 
