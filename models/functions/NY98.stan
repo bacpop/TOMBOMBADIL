@@ -527,6 +527,15 @@ matrix build_A(real kappa, real omega, matrix pimat, matrix pimult) {
   M[61,58] = 1;
   M[61,59] = 1;
   M[61,60] = kappa;
+
+  print("M:");
+  print(M);
+  
+  print("pimat:");
+  print(pimat);
+  
+  print("M * pimat:");
+  print(M * pimat);
   
   // Multiply by equilibrium frequencies
   // pimat is a matrix with sqrt(pi_eq) down the diagonal 

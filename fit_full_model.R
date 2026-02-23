@@ -36,8 +36,8 @@ mod_fit_test <- cmdstan_model("tombombadil.stan",
 
 fit_new <- mod_fit_test$sample(
   data = data_list,
-  iter_warmup = 1000, 
-  iter_sampling = 1000,
+  iter_warmup = 1, 
+  iter_sampling = 1,
   threads_per_chain = thr_per_chain,
   fixed_param = FALSE,
   chains = 1, 
