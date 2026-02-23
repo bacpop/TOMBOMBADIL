@@ -1,0 +1,15 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# read in results of foldseek search (swissprot results)
+```{r}
+alis_afdb.swissprot <- read.delim("~/Documents/PhD_Project/Data/SelectionModel/porB_foldseek_results/mmseqs_results_LE4ugxRep_G-oAkK8chjtJ2-V_Fhu_67xZ2s5g/alis_afdb-swissprot.m8", header=FALSE)
+
+alis_afdb.swissprot$V21[grepl('Escherichia coli', alis_afdb.swissprot$V21)] # find all matches to E coli
+length(alis_afdb.swissprot$V21[grepl('Escherichia coli', alis_afdb.swissprot$V21)]) # 122 hits
+
+alis_afdb.swissprot$V21[grepl('Streptococcus pneumoniae', alis_afdb.swissprot$V21)] # no matches to S. pneumo
+```
+

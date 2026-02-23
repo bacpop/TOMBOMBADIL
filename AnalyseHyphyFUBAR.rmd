@@ -1,0 +1,54 @@
+---
+title: "AnalyseHyphyFUBAR"
+output: html_document
+date: "2025-09-29"
+editor_options: 
+  chunk_output_type: console
+---
+
+# import hyphy results for porB
+```{r}
+library(readr)
+porB_FUBAR_sites <- read_csv("~/Documents/PhD_Project/Code/SelectionModel/HyPhy/HyPhy_FUBAR_analysis/porB_FUBAR_sites.csv")
+```
+
+#site
+#The codon position in your alignment (1-based index). Each row corresponds to one codon across all sequences.
+#alpha (α)
+#Posterior mean estimate of the synonymous substitution rate at that site. This reflects the expected rate of changes that do not alter the amino acid.
+#beta (β)
+#Posterior mean estimate of the nonsynonymous substitution rate at that site. This reflects the expected rate of changes that do alter the amino acid.
+
+#Prob_alpha>beta
+#Posterior probability that the site is evolving under purifying selection (synonymous rate > nonsynonymous rate, α > β).
+#High values (close to 1) mean strong evidence of purifying selection at that codon.
+
+#Prob_beta>alpha
+#Posterior probability that the site is evolving under positive selection (nonsynonymous rate > synonymous rate, β > α).
+#High values (≥ 0.9 is the usual threshold) mean strong evidence for positive/diversifying selection.
+
+```{r}
+# probability of positive selection 
+plot(porB_FUBAR_sites$`Prob_beta>alpha`, pch = 19, ylab = "Posterior probability for positive selection", xlab = "Position", cex.lab=1.5, cex.axis=1.5, cex.main=1.5, cex.sub=1.5)
+abline(h = 0.9, col = "red", lty = 2, lwd = 3)
+text(x=80, y=0.9, 'Threshold for strong evidence\n of positive selection', col = "red", cex = 1.2)
+```
+
+
+```{r}
+porB_FUBAR_sites_copy <- porB_FUBAR_sites
+porB_FUBAR_sites_copy$prob_pos_sel <- porB_FUBAR_sites$`Prob_beta>alpha`
+porB_FUBAR_sites_copy$site_loc <- 1:length(porB_FUBAR_sites$`Prob_beta>alpha`)
+#porB_FUBAR_sites_copy$site <- as.factor(porB_FUBAR_sites_copy$site)
+ggplot(porB_FUBAR_sites_copy, aes(x=site_loc, y=prob_pos_sel)) + 
+  geom_point() +
+  geom_hline(yintercept = 0.9, color = "orange", linetype = "dashed", linewidth = 1)  + # Add red line
+  ylab("Posterior probability for positive selection") +
+  xlab("Position") +
+  theme_minimal(base_size = 14) +  # Increase base font size
+  theme(
+    axis.title = element_text(size = 16),   # Axis titles
+    axis.text = element_text(size = 14)) +    # Axis tick labels
+  annotate("text", x=80, y=0.9, label= "Threshold for strong evidence\n of positive selection", color = "orange")
+```
+
