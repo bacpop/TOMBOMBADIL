@@ -29,7 +29,7 @@ model_fit <- mod$sample(
   iter_sampling = 1,
   chains = 1,
   fixed_param = TRUE,
-  init = function() list(l_omega = log(0.5), l_kappa = log(1.0), l_theta = log(0.5)),
+  init = function() list(l_omega = log(0.003), l_kappa = log(1.0), l_theta = log(0.5)),
   #data = data_list_singlelocus_example,
   data = data_list,
   threads_per_chain = 1,
