@@ -1,36 +1,48 @@
-<img src="https://github.com/bacpop/TOMBOMBADIL_jax/blob/main/TOMBOMBADIL_logo.png" alt="" width="200"/>
-
-# TOMBOMBADIL
+# TOMBOMBADIL <img src="https://github.com/bacpop/TOMBOMBADIL_jax/blob/main/TOMBOMBADIL_logo.png" alt="" width="200"/>
 **T**ree-free **O**mega **M**apping **B**y **O**bserving **M**utations of **B**ases and **A**mino acids **D**istributed **I**nside **L**oci 
+
+Estimate dN/dS directly from alignments using codon counts, no tree required
 
 >    "Old Tom Bombadil is a merry fellow! Bright Blue his jacket is, and his boots are yellow!"
     —Tom Bombadil 
 
-# TOMBOMBADIL - method for estimating dN/dS directly from alignments
+## Installation
 
-Original implementation in Stan https://github.com/bacpop/TOMBOMBADIL
+TODO: unpin versions < in poetry, make one per line
+create conda package
+give single install command
 
-Work is based on Genomegamap https://doi.org/10.1093/molbev/msaa069
+## Documentation
 
-# Fitting dN/dS model to data   
-1. Create codon-based multiple sequence alignments
+TODO: link
+use docs/ and use sphinx (see poppunk)
 
-2. Install Python 3.14.0, clone this GitHub repository
+## Basic usage
 
-3. Estimate dN/dS using TOMBOMBADIL by running one of the following commands from within the folder  
+You will first need to have an alignment of DNA sequences, aligned into codons. These can be produced by (e.g. revtrans)
 
-- Fit one omega estimate for the whole alignment (scalar omega) with maximum a posteriori (MAP) optimisation (default)
+Estimate dN/dS using TOMBOMBADIL by running one of the following commands from within the folder:
+
+Fit one omega estimate for the whole alignment (scalar omega) with maximum a posteriori (MAP) optimisation (default)
 ```bash
 python -m tombombadil --alignment alignment.fas.aln --fit-replicates 4 --fit-until-convergence --output-jax output.txt
 ```
 
-- Fit one omega estimate for per codon position in the alignment with maximum a posteriori (MAP) optimisation
+Fit one omega estimate for per codon position in the alignment with maximum a posteriori (MAP) optimisation
 ```bash
 python -m tombombadil --alignment alignment.fas.aln --omega-mode per-site --output-jax output
 ```
 
+For more examples see the [documentation](https://tombombadil.bacpop.org/)
+
 Optional domain JSON annotations can colour per-site omega plots. A reference
 protein FASTA is required for mapping alignment columns to protein positions:
+
+TODO: everything below here in main docs
+main docs has:
+- Intro page explaining algorithm briefly
+- Usage page giving the different modes of running
+- A worked example/tutorial, which also includes plots
 
 ```bash
 python -m tombombadil --alignment alignment.fas.aln --omega-mode per-site --domains domains.json --reference reference.faa
