@@ -190,6 +190,9 @@ Replace or deprecate `--sample-it` for MAP mode with terminology appropriate to 
 
 Consider making early convergence the default for MAP optimisation.
 
+Setting defaults both in the CLI parser, and in function arguments is
+confusing. Remove defaults in functions where these are set at input.
+
 ### MAINT-08 — Move I/O functions out of `__main__`
 
 Move I/O-related functions from `__main__` into an appropriate module.

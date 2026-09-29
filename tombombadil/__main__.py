@@ -101,12 +101,12 @@ def get_options():
                         help='Stop optimisation early when the objective stops improving.')
     mGroup.add_argument('--convergence-tol', type=float, default=1e-6,
                         help='Minimum objective improvement counted as progress (default: 1e-6).')
-    mGroup.add_argument('--convergence-patience', type=int, default=5,
-                        help='Number of convergence checks without progress before stopping (default: 5).')
-    mGroup.add_argument('--convergence-check-every', type=int, default=10,
-                        help='Check convergence every N optimiser steps (default: 10).')
-    mGroup.add_argument('--convergence-min-steps', type=int, default=50,
-                        help='Minimum optimiser steps before convergence can stop fitting (default: 50).')
+    mGroup.add_argument('--convergence-patience', type=int, default=3,
+                        help='Number of convergence checks without progress before stopping (default: 3).')
+    mGroup.add_argument('--convergence-check-every', type=int, default=1,
+                        help='Check convergence every N optimiser steps (default: 1).')
+    mGroup.add_argument('--convergence-min-steps', type=int, default=10,
+                        help='Minimum optimiser steps before convergence can stop fitting (default: 10).')
     mGroup.add_argument('--num-warmup', type=int, default=1000,
                         help='Number of BlackJAX NUTS warmup steps per chain (default: 1000).')
     mGroup.add_argument('--num-samples', type=int, default=1000,
