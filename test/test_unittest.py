@@ -172,19 +172,17 @@ class Testdiv(unittest.TestCase):
             mask = jnp.ones(1)
 
             fn = make_fn(pi_test, log_pi, pimat, pimatinv, pimult, X, mask)
-            self.assertAlmostEqual(fn({"alpha": softplus_inverse(1), "beta": softplus_inverse(1), "gamma": softplus_inverse(1), 
-                                    "delta": softplus_inverse(1), "epsilon": softplus_inverse(1), "eta": softplus_inverse(1), 
-                                    "theta": softplus_inverse(0.5), "omega": jnp.array(softplus_inverse(0.5), dtype=jnp.float32)}), 
+            self.assertAlmostEqual(fn({"alpha": softplus_inverse(1), "beta": softplus_inverse(1), "gamma": softplus_inverse(1),
+                                    "delta": softplus_inverse(1), "epsilon": softplus_inverse(1), "eta": softplus_inverse(1),
+                                    "theta": softplus_inverse(0.5), "omega": jnp.array(softplus_inverse(0.5), dtype=jnp.float32)}),
                                     jnp.array(-19.270576, dtype=jnp.float32), places=3)
-            
+
 
 # this is a test for the count_codons function (X, n_samples = count_codons(options.alignment))
 # run via python -m unittest -v test.test_fn.Test_codon_count_matrix
 class Test_codon_count_matrix(unittest.TestCase):
-    #fasta_path = "porB3.carriage.noindels.txt"
-
     def setUp(self):
-        self.fasta_path = "porB3.carriage.noindels.txt"
+        self.fasta_path = "test/fixtures/porB3_aligned.fasta"
 
     def _compute_expected_matrix(self, fasta_path):
         """
@@ -253,12 +251,30 @@ class Test_codon_count_matrix(unittest.TestCase):
 
         return matrix
 
-    def test_codon_count_matrix(self):
+    def test_codon_count_matrix_basic(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fasta_path = os.path.join(tmp, "counts.fasta")
+            with open(fasta_path, "w") as fasta:
+                fasta.write(
+                    ">sample-1\nTTTCCCGGG\n"
+                    ">sample-2\nTTTCCAGGG\n"
+                    ">sample-3\nTTCCCCGGA\n"
+                )
+
+            expected = self._compute_expected_matrix(fasta_path)
+            observed, samples = count_codons(fasta_path)
+
+        self.assertEqual(expected.shape, observed.shape)
+        self.assertEqual(samples, 3)
+        self.assertTrue((expected == observed).all())
+
+    def test_codon_count_matrix_real(self):
         expected = self._compute_expected_matrix(self.fasta_path)
         observed, samples = count_codons(self.fasta_path)
 
         self.assertEqual(expected.shape, observed.shape)
         self.assertTrue((expected == observed).all())
+        self.assertEqual(samples, 23)
 
 class TestScalarOmegaOutput(unittest.TestCase):
     def test_save_params_writes_scalar_omega_only(self):

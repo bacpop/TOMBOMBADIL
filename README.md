@@ -12,6 +12,15 @@ TODO: unpin versions < in poetry, make one per line
 create conda package
 give single install command
 
+## Running tests
+
+With the project environment active and pytest available, run the complete test
+suite with:
+
+```bash
+python -m pytest
+```
+
 ## Documentation
 
 TODO: link

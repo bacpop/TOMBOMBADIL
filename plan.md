@@ -7,9 +7,11 @@ Do not begin a backlog item merely because it appears in this file. Work only on
 # Current Status
 
 **Phase:** Establish baseline and regression tests  
-**Status:** Not started
+**Status:** Complete
 
-No implementation changes have yet been recorded in this plan.
+The correctness tests, per-site MAP integration oracle, and performance baseline
+are recorded. Run the suite in the active mamba environment with `python -m pytest`;
+packaging-level test dependency installation remains future work.
 
 # Current Task
 
@@ -19,18 +21,20 @@ Create the tests and reference measurements needed to protect correctness during
 
 ### Checklist
 
-- [ ] Confirm `python -m tombombadil --help` runs successfully.
-- [ ] Add a unit test covering likelihood and gradient calculations.
-- [ ] Record the expected likelihood and gradient reference values.
-- [ ] Add a MAP integration test equivalent to:
+- [x] Document `python -m pytest` in `README.md` for the active project environment.
+- [x] Confirm `python -m tombombadil --help` runs successfully.
+- [x] Add a unit test covering likelihood and gradient calculations.
+- [x] Record the expected likelihood and gradient reference values.
+- [x] Add a MAP integration test equivalent to:
 
   `python -m tombombadil --alignment porB3_aligned.fasta --omega-mode per-site --fit-method map --sample-it 500 --output-jax porB3_map --fit-until-convergence --exclude-invariant`
 
-- [ ] Record reference likelihood, omega estimates, and GTR parameter estimates.
-- [ ] Define and document numerical tolerances for the reference values.
-- [ ] Measure and record the baseline runtime of the MAP optimisation step.
-- [ ] Confirm unit and integration tests pass.
-- [ ] Update Current Status, Design Notes, Session Log, and Next Task.
+- [x] Record reference likelihood, omega estimates, and GTR parameter estimates.
+- [x] Define and document numerical tolerances for the reference values.
+- [x] Measure and record the baseline runtime of the MAP optimisation step.
+- [x] Make existing tests runnable from a clean checkout, including the codon-count fixture.
+- [x] Confirm the complete test suite passes with `python -m pytest`.
+- [x] Update Current Status, Design Notes, Session Log, and Next Task.
 
 ### Guardrails
 
@@ -47,9 +51,9 @@ Performance comparisons must use comparable inputs, configuration, hardware, and
 
 # Next Task
 
-Review the MAP execution path and identify the first optimisation/refactoring target using the correctness tests and performance baseline established by the Current Task.
+Complete MAINT-01 — Optimisation progress reporting
 
-Do not begin this task until the Current Task is complete.
+Do not begin this task automatically; wait for the user to request it.
 
 ---
 
@@ -94,6 +98,9 @@ Correctness takes precedence over optimisation: performance improvements must pr
 Backlog order does not authorize work. Move an item into Current Task before implementing it.
 
 ## Testing and baselines
+
+Run tests in the active mamba-managed environment with `python -m pytest`.
+The project-level pytest installation workflow is deferred.
 
 ### TEST-01 — Likelihood and gradient unit test
 
@@ -205,6 +212,11 @@ Review and rename unclear functions, including:
 
 Names should describe their role rather than implementation history.
 
+### MAINT-10 – remove JAXopt
+
+JAXopt is deprecated. We don't rely on it explicitly, but is giving
+a testing warning. Fix this warning / remove the dependency.
+
 ---
 
 # Optimisation Backlog
@@ -264,16 +276,16 @@ Avoid introducing parallelism until the existing CPU/thread behaviour is underst
 
 A Current Task is complete when:
 
-- [ ] Its checklist is complete.
-- [ ] Relevant existing tests pass.
-- [ ] New tests required by the task pass.
-- [ ] Protected numerical tests remain within their documented tolerances.
-- [ ] Any relevant performance comparison has been recorded.
-- [ ] Important implementation decisions are recorded in Design Notes.
-- [ ] Blockers or unresolved issues are recorded.
-- [ ] Current Status reflects the repository state.
-- [ ] Session Log records the work performed.
-- [ ] Next Task provides a clear handoff.
+- [x] Its checklist is complete.
+- [x] Relevant existing tests pass.
+- [x] New tests required by the task pass.
+- [x] Protected numerical tests remain within their documented tolerances.
+- [x] Any relevant performance comparison has been recorded.
+- [x] Important implementation decisions are recorded in Design Notes.
+- [x] Blockers or unresolved issues are recorded.
+- [x] Current Status reflects the repository state.
+- [x] Session Log records the work performed.
+- [x] Next Task provides a clear handoff.
 
 ## Project
 
@@ -305,6 +317,33 @@ Use entries of the form:
 
 **Consequences:** Important implications or follow-up work.
 
+### 2026-09-29 — Fixed pytest correctness and MAP baselines
+
+**Context:** The baseline phase had a likelihood-only unit oracle, no per-site
+MAP regression test, and a codon-count test that referenced an absent alignment.
+
+**Decision:** Preserve the existing `Testdiv` likelihood reference unchanged and
+add a fixed likelihood/gradient oracle. Record full per-site MAP outputs in
+`test/fixtures/porB3_per_site_map.json`. Use `rtol=1e-6` and `atol=1e-8` for the
+new numerical comparisons. Run the suite as `python -m pytest` in the active
+mamba-managed environment; do not add packaging-level pytest installation
+metadata in this phase.
+
+**Rationale:** Fixed references protect model and optimiser behavior, while the
+active mamba environment already supplies pytest. The environment installation
+workflow can be handled separately.
+
+**Consequences:** The likelihood/gradient reference is `-19.270575644321788`
+with gradients ordered as alpha, beta, gamma, delta, epsilon, eta, theta,
+omega: `[-1.229974550937346, -1.1830645041714325, -1.2878611181358206,
+-0.09967741966327304, -1.1079022028842331, 0.0, -0.4781776509112939,
+0.41828300010419445]`. The per-site MAP objective reference is
+`-1071.4185160607003`; GTR estimates and all 294 omega estimates are in the
+JSON fixture. The optimizer-only baseline was `142.556440` seconds for 210
+steps on macOS 26.6.2 arm64 with Python 3.14.7 and CPU backend. Timing starts
+at `_run_replicates()` and includes first-step JAX compilation; it excludes
+alignment loading, transform setup, and output writing.
+
 ---
 
 # Blockers
@@ -325,26 +364,38 @@ Remove resolved blockers from this section once their resolution has been captur
 
 Keep entries concise. Record outcomes rather than a transcript of the work.
 
-## YYYY-MM-DD
+## 2026-09-29
 
-**Task:** `<task ID or Current Task>`
+**Task:** TEST-01–03 — Correctness and performance baselines
 
 **Completed:**
-- ...
+- Added fixed likelihood/gradient and per-site MAP regression references.
+- Replaced the missing codon-count input with a self-contained temporary FASTA.
+- Documented `python -m pytest` in `README.md`.
 
 **Changed:**
-- ...
+- Added `test/test_baselines.py`, `test/run_map_benchmark.py`, and the full MAP
+  reference fixture; preserved the original `Testdiv` reference.
 
 **Tests/benchmarks:**
-- ...
+- `python -m tombombadil --help` succeeded.
+- `python -m pytest`: 40 passed, 2 dependency deprecation warnings, 194.69 s.
+- MAP optimizer benchmark: 142.556440 s, 210 steps, including first-step JAX
+  compilation. Input: `porB3_aligned.fasta` (23 samples, 294 codon sites), CPU,
+  one replicate, per-site omega, 500 maximum steps, convergence enabled,
+  invariant sites excluded.
+- Benchmark command:
+  `MPLCONFIGDIR=/private/tmp/tombombadil-phase1-map/mplconfig python -m test.run_map_benchmark --alignment porB3_aligned.fasta --omega-mode per-site --fit-method map --sample-it 500 --output-jax /private/tmp/tombombadil-phase1-map/porB3_map --fit-until-convergence --exclude-invariant --platform cpu`
 
 **Decisions:**
-- ...
+- Numerical comparisons use `rtol=1e-6`, `atol=1e-8`; pytest dependency
+  installation is deferred because mamba currently manages the environment.
 
 **Remaining:**
-- ...
+- None for this task.
 
-**Next:** ...
+**Next:** Review the MAP execution path and select the first optimisation target;
+wait for the user to request that task before starting.
 
 ---
 
@@ -352,4 +403,5 @@ Keep entries concise. Record outcomes rather than a transcript of the work.
 
 Record significant deviations from the planned approach or scope.
 
-None currently recorded.
+Defer project-level pytest installation metadata and lockfile changes; the active
+environment is mamba-managed and already has pytest, per user direction.
