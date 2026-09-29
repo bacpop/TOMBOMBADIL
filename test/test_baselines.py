@@ -108,6 +108,10 @@ class TestPerSiteMapIntegration(unittest.TestCase):
                 0,
                 msg=f"CLI failed.\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}",
             )
+            self.assertRegex(
+                result.stderr,
+                r"MAP replicate 1/1, step 10/500: log-likelihood =",
+            )
             likelihood_match = re.search(
                 r"Final likelihood:\s*([-+0-9.eE]+)", result.stdout
             )
@@ -121,6 +125,10 @@ class TestPerSiteMapIntegration(unittest.TestCase):
 
             gtr_path = output_stem.parent / f"per_site_{output_stem.name}_GTRparams.csv"
             omega_path = output_stem.parent / f"per_site_{output_stem.name}_omega.csv"
+            likelihood_plot = output_stem.parent / (
+                f"per_site_{output_stem.name}_likelihood_plot.pdf"
+            )
+            self.assertGreater(likelihood_plot.stat().st_size, 0)
             with gtr_path.open(newline="") as handle:
                 observed_gtr = {
                     row["variable"]: float(row["value"])

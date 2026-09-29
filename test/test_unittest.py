@@ -577,6 +577,10 @@ class TestOptimizerConvergence(unittest.TestCase):
 
         self.assertTrue(result["converged"])
         self.assertLess(result["n_steps"], 20)
+        self.assertEqual(
+            [step for step, _ in result["objective_history"]],
+            [0, *range(1, result["n_steps"] + 1)],
+        )
 
     def test_fixed_step_mode_runs_requested_steps(self):
         params = {"x": jnp.array(0.0, dtype=jnp.float64)}

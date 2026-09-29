@@ -78,13 +78,15 @@ def get_options():
                              '(Hessian-based). Can be memory-intensive for large alignments.')
     mGroup.add_argument('--fit-replicates', type=int, default=1, metavar='N',
                         help='Run the optimiser N times with random perturbations of the starting values '
-                             'and produce a convergence plot. Best replicate (highest log-likelihood) is used '
-                             'for all downstream outputs (default: 1).')
+                             'and compare their parameter estimates and likelihood traces. The best replicate '
+                             '(highest log-likelihood) is used for all downstream outputs (default: 1).')
     mGroup.add_argument('--exclude-invariant', action='store_true', default=False,
                         help='Exclude invariant sites from the data likelihood. By default invariant '
                              'sites are included.')
     mGroup.add_argument('--output-jax', type=str, default=None, metavar='STEM',
-                        help='Save MAP or NUTS output files with the given stem. Default: do not save.')
+                        help='Save parameter/result files with the given stem. MAP optimisation always reports '
+                             'progress and saves a likelihood plot; without a stem, the plot is saved in the '
+                             'current directory.')
     mGroup.add_argument('--fit-method', choices=['map', 'nuts'], default='map',
                         help='Fit with MAP optimisation or BlackJAX NUTS sampling (default: map).')
     mGroup.add_argument('--objective-aggregate', choices=['mean', 'sum'], default='sum',

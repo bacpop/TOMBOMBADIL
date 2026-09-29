@@ -6,35 +6,30 @@ Do not begin a backlog item merely because it appears in this file. Work only on
 
 # Current Status
 
-**Phase:** Establish baseline and regression tests  
+**Phase:** Maintainable MAP optimisation
 **Status:** Complete
 
-The correctness tests, per-site MAP integration oracle, and performance baseline
-are recorded. Run the suite in the active mamba environment with `python -m pytest`;
-packaging-level test dependency installation remains future work.
+MAINT-01 is complete. MAP progress and likelihood plots are enabled by default;
+the full pytest suite passes and the protected numerical references are unchanged.
 
 # Current Task
 
-## Establish correctness and performance baselines
+## MAINT-01 — Optimisation progress reporting
 
-Create the tests and reference measurements needed to protect correctness during subsequent refactoring and optimisation.
+Add default progress reporting and likelihood history plotting to the MAP optimisation path. Use tqdm already installed in the active mamba environment; dependency installation or packaging changes are out of scope.
 
 ### Checklist
 
-- [x] Document `python -m pytest` in `README.md` for the active project environment.
-- [x] Confirm `python -m tombombadil --help` runs successfully.
-- [x] Add a unit test covering likelihood and gradient calculations.
-- [x] Record the expected likelihood and gradient reference values.
-- [x] Add a MAP integration test equivalent to:
-
-  `python -m tombombadil --alignment porB3_aligned.fasta --omega-mode per-site --fit-method map --sample-it 500 --output-jax porB3_map --fit-until-convergence --exclude-invariant`
-
-- [x] Record reference likelihood, omega estimates, and GTR parameter estimates.
-- [x] Define and document numerical tolerances for the reference values.
-- [x] Measure and record the baseline runtime of the MAP optimisation step.
-- [x] Make existing tests runnable from a clean checkout, including the codon-count fixture.
-- [x] Confirm the complete test suite passes with `python -m pytest`.
-- [x] Update Current Status, Design Notes, Session Log, and Next Task.
+- [x] Warm the MAP benchmark in-process, then record a pre-change steady-state optimizer runtime: 130.472883 s after a 144.394336 s untimed warm-up.
+- [x] Show MAP iteration progress by default, with current objective updates at recorded checkpoints and a useful non-TTY logging fallback.
+- [x] Record objective history without changing optimizer updates, convergence decisions, replicate selection, or reference values.
+- [x] Save a likelihood-versus-iteration PDF by default; label its y-axis exactly `log-likelihood` and highlight the best replicate when several are fitted.
+- [x] When `--output-jax` is provided, save the plot alongside the existing mode-prefixed outputs; otherwise use `scalar_likelihood_plot.pdf` or `per_site_likelihood_plot.pdf` in the current directory.
+- [x] Document the default progress and plot behavior in CLI help and `README.md`; add no CLI flag.
+- [x] Add focused tests for progress/history and plot labeling/output naming, plus the MAP integration plot artifact assertion.
+- [x] Record a warmed post-change benchmark using the same timing boundary and configuration: 133.801273 s after a 138.051521 s untimed warm-up.
+- [x] Run the complete test suite and preserve the likelihood/gradient and MAP numerical references.
+- [x] Update Current Status, Design Notes, Session Log, blockers, and Next Task.
 
 ### Guardrails
 
@@ -51,9 +46,7 @@ Performance comparisons must use comparable inputs, configuration, hardware, and
 
 # Next Task
 
-Complete MAINT-01 — Optimisation progress reporting
-
-Do not begin this task automatically; wait for the user to request it.
+Continue with MAINT-02 — CPU/thread configuration investigation. Do not begin it automatically.
 
 ---
 
@@ -139,7 +132,8 @@ Use this benchmark when evaluating optimisation changes.
 
 ### MAINT-01 — Optimisation progress reporting
 
-Add progress reporting for MAP optimisation.
+Add default progress reporting for MAP optimisation using tqdm already installed
+in the active mamba environment.
 
 Include:
 
@@ -291,13 +285,13 @@ A Current Task is complete when:
 
 The project is complete when:
 
-- [ ] `python -m tombombadil --help` runs successfully.
-- [ ] The required unit and integration tests exist.
-- [ ] All required tests pass.
-- [ ] Numerical correctness guardrails are satisfied.
+- [x] `python -m tombombadil --help` runs successfully.
+- [x] The required unit and integration tests exist.
+- [x] All required tests pass.
+- [x] Numerical correctness guardrails are satisfied.
 - [ ] Approved maintainability work is complete.
 - [ ] Approved optimisation work has been benchmarked and accepted or rejected based on evidence.
-- [ ] `plan.md` accurately reflects the final repository state.
+- [x] `plan.md` accurately reflects the final repository state.
 
 ---
 
@@ -343,6 +337,39 @@ JSON fixture. The optimizer-only baseline was `142.556440` seconds for 210
 steps on macOS 26.6.2 arm64 with Python 3.14.7 and CPU backend. Timing starts
 at `_run_replicates()` and includes first-step JAX compilation; it excludes
 alignment loading, transform setup, and output writing.
+
+### 2026-09-29 — Default MAP progress and likelihood history
+
+**Context:** MAINT-01 requested MAP iteration progress, current likelihood
+updates, and a likelihood-versus-iteration plot. The active mamba environment
+already provides tqdm.
+
+**Decision:** Use a tqdm bar for each MAP replicate in an interactive terminal.
+Record the starting objective and objective values at the existing convergence
+checks, or every 10 iterations in fixed-step mode, plus the final iterate when
+needed. In non-TTY runs, log those checkpoints. Save the plot on every MAP run
+with the y-axis label `log-likelihood`; highlight the best replicate. Use
+`scalar_likelihood_plot.pdf` or `per_site_likelihood_plot.pdf` without an output
+stem, and the existing mode-prefixed output stem when one is supplied. Add no
+CLI flag or package dependency.
+
+**Rationale:** Reusing convergence-check evaluations avoids changing the
+convergence rule. Fixed-step objective samples make progress visible without
+evaluating the model at every iteration. The optimizer updates, replicate
+selection, and reference values remain unchanged.
+
+**Consequences:** The benchmark helper now runs one full untimed optimizer pass
+in-process, blocks until its JAX results are ready, then times a fresh run. On
+the 23-sample, 294-site porB3 input with CPU backend, one replicate, 500 maximum
+steps, convergence enabled, and invariant sites excluded, the pre-change warm
+pass took 144.394336 s and the timed pass 130.472883 s. After MAINT-01, the warm
+pass took 138.051521 s and the timed pass 133.801273 s (210 optimizer steps in
+both cases; final objective `-1071.4185160607003`). The post-change timed run is
+2.55% above the pre-change warm measurement and 6.14% below the earlier cold
+baseline of 142.556440 s; these single runs do not establish a performance
+improvement. Timing starts at `_run_replicates()` after the warm-up and includes
+progress reporting and result synchronization; it excludes alignment loading,
+transform setup, plot writing, and parameter output. No unresolved blockers.
 
 ---
 
@@ -396,6 +423,30 @@ Keep entries concise. Record outcomes rather than a transcript of the work.
 
 **Next:** Review the MAP execution path and select the first optimisation target;
 wait for the user to request that task before starting.
+
+## 2026-09-29 — MAINT-01 progress reporting
+
+**Task:** MAINT-01 — Optimisation progress reporting
+
+**Completed:**
+- Added per-replicate tqdm progress for interactive terminals and checkpoint
+  likelihood logs when stderr is redirected.
+- Recorded objective history and saved a best-replicate-highlighted PDF by
+  default, using the exact y-axis label `log-likelihood`.
+- Documented default output paths and behavior in CLI help and `README.md`.
+
+**Tests/benchmarks:**
+- `python -m tombombadil --help` succeeded; `git diff --check` passed.
+- Focused progress and convergence tests: 5 passed.
+- `python -m pytest`: 44 passed, 2 existing dependency deprecation warnings,
+  187.55 s. The likelihood/gradient and per-site MAP references remain within
+  their existing tolerances.
+- Warmed benchmark results and timing boundaries are recorded in Design Notes.
+
+**Blockers:** None.
+
+**Next:** Continue with MAINT-02 — CPU/thread configuration investigation; do
+not begin until requested.
 
 ---
 

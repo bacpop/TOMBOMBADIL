@@ -3,6 +3,7 @@
 import csv as _csv
 import logging
 import os
+import sys
 import numpy as np
 import jax
 import jax.numpy as jnp
@@ -14,6 +15,7 @@ from jax import jit
 from jax.flatten_util import ravel_pytree
 jax.config.update('jax_enable_x64', True)
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 
 from .gtr import build_GTR
 from .likelihood import gen_alpha
@@ -37,6 +39,15 @@ def mode_output_stem(output_stem, omega_mode):
     directory, basename = os.path.split(str(output_stem))
     prefixed = f"{omega_mode.replace('-', '_')}_{basename}"
     return os.path.join(directory, prefixed) if directory else prefixed
+
+
+def likelihood_plot_path(output_stem, omega_mode):
+    """Return the default or output-stem-based MAP likelihood plot path."""
+    validate_omega_mode(omega_mode)
+    if output_stem is None:
+        mode_name = omega_mode.replace("-", "_")
+        return f"{mode_name}_likelihood_plot.pdf"
+    return mode_output_stem(output_stem, omega_mode) + "_likelihood_plot.pdf"
 
 @jit
 def my_dirichlet_multinomial_logpmf(x, a):
@@ -346,7 +357,8 @@ def evaluate_fixed_params(X, pi_eq, natural_params, include_invariant=True,
     return float(fn(raw_params))
 
 
-def _optimize_params(fn, params, solver, n_iter, verbose=True, convergence=None):
+def _optimize_params(fn, params, solver, n_iter, verbose=True, convergence=None,
+                     progress_callback=None):
     """Run the optimization loop and return final params plus convergence metadata."""
     loss_fn = lambda p: -fn(p)
     opt_state = solver.init(params)
@@ -357,7 +369,13 @@ def _optimize_params(fn, params, solver, n_iter, verbose=True, convergence=None)
     tol = float(convergence.get("tol", 0.0)) if use_convergence else 0.0
 
     best_params = params
-    best_objective = float(fn(params)) if use_convergence else None
+    initial_objective = float(fn(params))
+    best_objective = initial_objective if use_convergence else None
+    objective_history = [(0, initial_objective)]
+    last_objective = initial_objective
+    last_evaluation_step = 0
+    if progress_callback is not None:
+        progress_callback(0, n_iter, initial_objective)
     stale_checks = 0
     converged = False
     steps_run = 0
@@ -374,8 +392,12 @@ def _optimize_params(fn, params, solver, n_iter, verbose=True, convergence=None)
             ])))
             print('omegas: ', jax.tree.map(positive, params["omega"]))
 
+        current_objective = None
         if use_convergence and step % check_every == 0:
             current_objective = float(fn(params))
+            objective_history.append((step, current_objective))
+            last_objective = current_objective
+            last_evaluation_step = step
             improvement = current_objective - best_objective
             if current_objective > best_objective:
                 best_objective = current_objective
@@ -389,16 +411,31 @@ def _optimize_params(fn, params, solver, n_iter, verbose=True, convergence=None)
                 if stale_checks >= patience:
                     converged = True
                     break
+        elif not use_convergence and step % 10 == 0:
+            current_objective = float(fn(params))
+            objective_history.append((step, current_objective))
+            last_objective = current_objective
+            last_evaluation_step = step
+
+        if progress_callback is not None and (step < n_iter or current_objective is not None):
+            progress_callback(step, n_iter, current_objective)
+
+    if steps_run != last_evaluation_step:
+        last_objective = float(fn(params))
+        objective_history.append((steps_run, last_objective))
+        if progress_callback is not None:
+            progress_callback(steps_run, n_iter, last_objective)
 
     if not use_convergence:
         best_params = params
-        best_objective = float(fn(params))
+        best_objective = last_objective
 
     return {
         "params": best_params,
         "n_steps": steps_run,
         "objective": best_objective,
         "converged": converged,
+        "objective_history": objective_history,
     }
 
 
@@ -740,7 +777,8 @@ def _perturb_params(params, scale=0.5):
     return unflatten(flat + noise)
 
 
-def _run_replicates(fn, start_params, param_labels, n_reps, n_iter=100, convergence=None):
+def _run_replicates(fn, start_params, param_labels, n_reps, n_iter=100,
+                    convergence=None, progress=True):
     """Run the optimizer n_reps times and return all results plus the index of the best.
 
     Replicate 0 uses the unperturbed starting point; subsequent replicates add
@@ -770,7 +808,45 @@ def _run_replicates(fn, start_params, param_labels, n_reps, n_iter=100, converge
             {"vec": optax.adam(schedule), "scalar": optax.adam(schedule)},
             param_labels=param_labels,
         )
-        result = _optimize_params(fn, start, solver, n_iter, verbose=False, convergence=convergence)
+
+        interactive_progress = progress and sys.stderr.isatty()
+        progress_bar = None
+        last_progress_step = 0
+        if interactive_progress:
+            progress_bar = tqdm(
+                total=n_iter,
+                desc=f"MAP replicate {rep + 1}/{n_reps}",
+                unit="step",
+                file=sys.stderr,
+            )
+
+        def report_progress(step, total, objective):
+            nonlocal last_progress_step
+            if progress_bar is not None:
+                if step > last_progress_step:
+                    progress_bar.update(step - last_progress_step)
+                    last_progress_step = step
+                if objective is not None:
+                    progress_bar.set_postfix_str(f"log-likelihood={objective:.6f}")
+            elif objective is not None:
+                logging.info(
+                    "MAP replicate %d/%d, step %d/%d: log-likelihood = %.6f",
+                    rep + 1, n_reps, step, total, objective,
+                )
+
+        try:
+            result = _optimize_params(
+                fn,
+                start,
+                solver,
+                n_iter,
+                verbose=False,
+                convergence=convergence,
+                progress_callback=report_progress if progress else None,
+            )
+        finally:
+            if progress_bar is not None:
+                progress_bar.close()
         params_rep = result["params"]
         ll = result["objective"]
         all_params.append(params_rep)
@@ -814,6 +890,33 @@ def plot_replicates(all_params_list, best_idx):
     ax.legend(loc='upper left', bbox_to_anchor=(1.01, 1), borderaxespad=0, fontsize=8)
 
     plt.tight_layout()
+    return fig, ax
+
+
+def plot_likelihood_history(all_metadata, best_idx):
+    """Plot sampled MAP objective values, emphasizing the best replicate."""
+    fig, ax = plt.subplots(figsize=(9, 5))
+    cmap = plt.cm.tab10
+
+    for rep, metadata in enumerate(all_metadata):
+        history = metadata["objective_history"]
+        iterations, objectives = zip(*history)
+        is_best = rep == best_idx
+        ax.plot(
+            iterations,
+            objectives,
+            color=cmap(rep % 10),
+            linewidth=2.5 if is_best else 1.2,
+            alpha=1.0 if is_best else 0.55,
+            zorder=3 if is_best else 2,
+            label=f"Replicate {rep + 1}" + (" (best)" if is_best else ""),
+        )
+
+    ax.set_xlabel("iteration")
+    ax.set_ylabel("log-likelihood")
+    ax.set_title("MAP log-likelihood by iteration")
+    ax.legend(loc="best")
+    fig.tight_layout()
     return fig, ax
 
 
@@ -987,6 +1090,13 @@ def run_sampler(X, pi_eq, samples=500, platform='cpu', threads=8,
     status = "converged" if best_metadata["converged"] else "reached max steps"
     print(f"Optimization status: {status} after {best_metadata['n_steps']} step(s)")
     #print('Objective function: ', loss_fn(params))
+
+    likelihood_fig, _ = plot_likelihood_history(all_metadata, best_idx)
+    likelihood_path = likelihood_plot_path(output, omega_mode)
+    likelihood_fig.savefig(likelihood_path, format="pdf", bbox_inches="tight")
+    plt.close(likelihood_fig)
+    logging.info("Saved MAP likelihood plot to: %s", likelihood_path)
+
     if fit_replicates > 1:
         plot_replicates(all_params, best_idx)
         plt.show()

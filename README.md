@@ -156,6 +156,15 @@ MAP fitting writes `scalar_output_Allparams.csv`; per-site MAP fitting writes
 `per_site_output_GTRparams.csv` and `per_site_output_omega.csv`. NUTS files
 use the same `scalar_` or `per_site_` prefix.
 
+MAP optimisation reports iteration progress by default, with the current
+log-likelihood updated at checkpoints. In a terminal this appears as a progress
+bar for each replicate; when output is redirected, the checkpoints are written
+to the log. Every MAP run also saves a likelihood-versus-iteration PDF with the
+best replicate highlighted. Without `--output-jax`, the plot is saved in the
+current directory as `scalar_likelihood_plot.pdf` or
+`per_site_likelihood_plot.pdf`. With an output stem, it is saved alongside the
+other results, for example `per_site_output_likelihood_plot.pdf`.
+
 # More options
 --convergence-tol x default=1e-6
 
