@@ -9,26 +9,26 @@ Do not begin a backlog item merely because it appears in this file. Work only on
 **Phase:** Maintainable MAP optimisation
 **Status:** Complete
 
-MAINT-01 is complete. MAP progress and likelihood plots are enabled by default;
-the full pytest suite passes and the protected numerical references are unchanged.
+MAINT-01 and MAINT-02 are complete. The CPU worker count now configures MAP and
+NUTS on the CPU backend; the full test suite and numerical references pass.
 
 # Current Task
 
-## MAINT-01 — Optimisation progress reporting
+## MAINT-02 — CPU/thread configuration
 
-Add default progress reporting and likelihood history plotting to the MAP optimisation path. Use tqdm already installed in the active mamba environment; dependency installation or packaging changes are out of scope.
+Make `--cpus` configure JAX CPU workers for MAP and NUTS. Default to 4, accept explicit positive values such as 1, and treat this as a worker setting rather than a strict process CPU cap. Apply this only to the CPU backend.
 
 ### Checklist
 
-- [x] Warm the MAP benchmark in-process, then record a pre-change steady-state optimizer runtime: 130.472883 s after a 144.394336 s untimed warm-up.
-- [x] Show MAP iteration progress by default, with current objective updates at recorded checkpoints and a useful non-TTY logging fallback.
-- [x] Record objective history without changing optimizer updates, convergence decisions, replicate selection, or reference values.
-- [x] Save a likelihood-versus-iteration PDF by default; label its y-axis exactly `log-likelihood` and highlight the best replicate when several are fitted.
-- [x] When `--output-jax` is provided, save the plot alongside the existing mode-prefixed outputs; otherwise use `scalar_likelihood_plot.pdf` or `per_site_likelihood_plot.pdf` in the current directory.
-- [x] Document the default progress and plot behavior in CLI help and `README.md`; add no CLI flag.
-- [x] Add focused tests for progress/history and plot labeling/output naming, plus the MAP integration plot artifact assertion.
-- [x] Record a warmed post-change benchmark using the same timing boundary and configuration: 133.801273 s after a 138.051521 s untimed warm-up.
-- [x] Run the complete test suite and preserve the likelihood/gradient and MAP numerical references.
+- [x] Default `--cpus` to 4, validate that it is positive, and apply it to MAP and both NUTS chain modes on CPU.
+- [x] Set the JAX worker setting before JAX is imported or its CPU backend is initialized; make the CLI value take precedence over an existing `NPROC` value.
+- [x] For CPU NUTS `pmap`, make the host device count match `--cpus` while preserving unrelated `XLA_FLAGS` entries.
+- [x] Leave GPU and TPU behavior unchanged; document that `--cpus` is a JAX worker setting, not a strict process CPU cap.
+- [x] Add tests for default 4, explicit 1, invalid values, environment precedence, pmap device count, and startup ordering in a fresh process.
+- [x] Run a small two-chain NUTS `pmap` subprocess smoke check with four CPU devices.
+- [x] Repeat the short MAP CPU usage probe with `--cpus 1` and `--cpus 4`; record worker behavior without using a fragile CPU percentage assertion as a unit test.
+- [x] Record a warmed per-site MAP benchmark with the default of 4 and the existing benchmark timing boundary.
+- [x] Run the full test suite and preserve the likelihood/gradient and MAP numerical references.
 - [x] Update Current Status, Design Notes, Session Log, blockers, and Next Task.
 
 ### Guardrails
@@ -46,7 +46,7 @@ Performance comparisons must use comparable inputs, configuration, hardware, and
 
 # Next Task
 
-Continue with MAINT-02 — CPU/thread configuration investigation. Do not begin it automatically.
+Continue with MAINT-03 — Compilation logging. Do not begin it automatically.
 
 ---
 
@@ -150,6 +150,9 @@ Investigate and ensure the requested CPU/thread configuration is respected.
 ### MAINT-03 — Compilation logging
 
 Make it clear in logging that JAX model compilation is a one-off cost rather than part of steady-state optimisation performance.
+
+Change the progress bar to report the log-likelihood every step,
+accepting the slight hit to performance for this evaluation.
 
 ### MAINT-04 — Separate MAP and NUTS execution paths
 
@@ -376,6 +379,51 @@ transform setup, plot writing, and parameter output. No unresolved blockers.
 
 ---
 
+### 2026-09-29 — CPU worker configuration
+
+**Context:** `--cpus` previously affected only CPU NUTS `pmap` device creation,
+defaulted to 1, and did not constrain CPU work during MAP or sequential NUTS.
+
+**Decision:** Default to 4 and apply `NPROC=<cpus>` on the CPU backend before
+JAX import for MAP and both NUTS modes. For CPU NUTS `pmap`, normalize the
+`--xla_force_host_platform_device_count` entry in `XLA_FLAGS` to match the
+requested count while preserving unrelated flags. Explicit positive counts,
+including 1, override inherited `NPROC`. Do not alter GPU/TPU worker settings.
+Describe `--cpus` as a JAX worker setting, not a strict process CPU cap.
+
+**Rationale:** Environment probes showed that `NPROC` affects CPU worker
+utilization in this JAX/mamba environment, while common Eigen thread flags did
+not. Four CPU pmap devices are configured before JAX import; the fresh-process
+two-chain smoke check confirms they are usable.
+
+**Consequences:** A 30-iteration per-site MAP probe on `porB3_aligned.fasta`
+completed in 29.17 s with `--cpus 1` (median 168.8% CPU after the first 10 s)
+and 19.61 s with `--cpus 4` (median 358.6%). CPU usage can exceed 100% per
+worker due to helper threads and compilation. The warmed benchmark used 4
+workers and the existing optimizer-only timing boundary: an untimed warm pass
+took 99.071470 s, followed by a timed pass of 101.753761 s for 210 steps. It
+used the same 23-sample, 294-site input and produced the fixed objective
+`-1071.4185160607003`. The prior MAINT-01 measurement (then `--cpus 1`, before
+this option configured CPU workers) was 138.051521 s warm and 133.801273 s timed
+for 210 steps. The current timed run is about 24% shorter, but one run per
+configuration does not establish a repeatable performance comparison or
+attribute the difference to worker count. The benchmark used:
+
+`env NPROC=4 MPLCONFIGDIR=/private/tmp/maint02-benchmark/mplconfig python -m test.run_map_benchmark --alignment porB3_aligned.fasta --omega-mode per-site --fit-method map --sample-it 500 --output-jax /private/tmp/maint02-benchmark/default4_reference_settings --fit-until-convergence --convergence-patience 5 --convergence-check-every 10 --convergence-min-steps 50 --exclude-invariant --platform cpu`
+
+The fixed MAP integration fixture predates the CLI convergence-default change
+already in `HEAD` (patience 3, check every step,
+minimum 10), whose shorter stopping point is 16 steps at likelihood
+`-1074.174409853388`. Pin the fixture test and warmed benchmark to the previous
+settings (patience 5, check every 10 steps, minimum 50) so they continue to
+check the established reference without changing its values or tolerances. The
+CLI default assertions also now reflect the 3/1/10 defaults already selected in
+`HEAD`. The fixed likelihood/gradient and MAP references pass unchanged.
+
+**Full-suite verification:** `python -m pytest` completed with 51 passed and 2
+existing dependency deprecation warnings in 131.57 s. `python -m tombombadil
+--help` and `git diff --check` also succeeded.
+
 # Blockers
 
 None currently recorded.
@@ -450,6 +498,36 @@ wait for the user to request that task before starting.
 
 **Next:** Continue with MAINT-02 — CPU/thread configuration investigation; do
 not begin until requested.
+
+## 2026-09-29 — MAINT-02 CPU/thread configuration
+
+**Task:** MAINT-02 — CPU/thread configuration
+
+**Completed:**
+- Set the CPU `--cpus` default to 4, reject non-positive values, and apply the
+  requested `NPROC` before JAX backend initialization for MAP and both NUTS
+  chain modes. CPU NUTS `pmap` also gets a matching host-device count while
+  unrelated XLA flags are retained; GPU and TPU settings are unchanged.
+- Documented the worker-setting semantics in CLI help and `README.md`.
+- Added coverage for default/explicit values, invalid inputs, inherited
+  environment precedence, MAP and sequential NUTS worker settings, pmap device
+  flags, GPU/TPU behavior, and a fresh-process two-chain/four-device smoke run.
+- Pinned the MAP regression test to its established convergence settings and
+  updated stale CLI default assertions. Numerical references and tolerances
+  were not changed.
+
+**Tests/benchmarks:**
+- `python -m pytest`: 51 passed, 2 existing dependency deprecation warnings,
+  131.57 s. The likelihood/gradient and MAP reference tests passed.
+- `python -m tombombadil --help` succeeded; `git diff --check` passed.
+- A 30-step CPU probe completed in 29.17 s at `--cpus 1` (168.8% median CPU
+  after 10 s) and 19.61 s at `--cpus 4` (358.6%).
+- Warmed per-site MAP at 4 workers: 99.071470 s warm-up, 101.753761 s timed,
+  210 steps, objective `-1071.4185160607003`.
+
+**Blockers:** None.
+
+**Next:** MAINT-03 — Compilation logging; wait for the user to request it.
 
 ---
 

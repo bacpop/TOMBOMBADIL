@@ -3,9 +3,20 @@
 import logging
 import gzip
 import os
+import argparse
 import numpy as np
 
 from .__init__ import __version__
+
+
+def _positive_int(value):
+    try:
+        parsed = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("must be a positive integer") from None
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
 
 # expected order
 # "TTT","TTC","TTA","TTG","TCT","TCC","TCA","TCG","TAT","TAC","TGT","TGC"
@@ -50,7 +61,6 @@ CODON_LIST = tuple(
 BASE_TO_INDEX = {base: idx for idx, base in enumerate(BASE_ORDER)}
 
 def get_options():
-    import argparse
     parser = argparse.ArgumentParser(description='TOMBOMBADIL (Tree-free Omega Mapping By Observing Mutations of Bases and Amino acids Distributed Inside Loci)',
                                      prog='tombombadil')
 
@@ -149,8 +159,9 @@ def get_options():
     hGroup = parser.add_argument_group('Hardware options')
     hGroup.add_argument('--platform', choices=['cpu', 'gpu', 'tpu'], default='cpu',
                         help='Which hardware/device to run on')
-    hGroup.add_argument('--cpus', type=int, default=1,
-                        help='Number of CPU cores to use')
+    hGroup.add_argument('--cpus', type=_positive_int, default=4,
+                        help='JAX worker setting on the CPU backend for MAP and NUTS (default: 4). '
+                             'For CPU NUTS pmap, also sets the number of local CPU devices')
     hGroup.add_argument('--nuts-chain-mode', choices=['sequential', 'pmap'], default='sequential',
                         help='Run NUTS chains sequentially or in parallel across JAX devices '
                              '(default: sequential).')
@@ -312,13 +323,9 @@ def main():
         force=True)
 
     options = get_options()
-    if options.cpus != 1 and options.nuts_chain_mode != "pmap":
-        logging.warning(
-            "--cpus=%s has no effect unless --nuts-chain-mode pmap is used; "
-            "MAP optimisation and sequential NUTS chains run serially.",
-            options.cpus,
-        )
     configure_jax_for_options(options)
+    if options.platform == "cpu":
+        logging.info("JAX CPU worker setting: %d", options.cpus)
     logging.info("Reading alignment...")
     X, n_samples = count_codons(options.alignment)
     logging.info(f"Read {n_samples} samples and {X.shape[1]} codons")

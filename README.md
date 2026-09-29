@@ -151,6 +151,11 @@ For CPU parallel chains, add `--nuts-chain-mode pmap --cpus 4`. Otherwise,
 chains run sequentially by default. NUTS writes posterior samples and summary
 files with the selected `scalar_` or `per_site_` prefix.
 
+On the CPU backend, `--cpus` sets the JAX worker count for both MAP and NUTS
+(default: 4). In NUTS `pmap` mode it also sets the number of local CPU devices.
+This configures JAX workers; process CPU use can exceed the selected count due
+to runtime helper threads and compilation work.
+
 Output files are prefixed by omega mode. With `--output-jax output`, scalar
 MAP fitting writes `scalar_output_Allparams.csv`; per-site MAP fitting writes
 `per_site_output_GTRparams.csv` and `per_site_output_omega.csv`. NUTS files
@@ -172,7 +177,7 @@ other results, for example `per_site_output_likelihood_plot.pdf`.
 
 --platform gpu/cpu/tpu
 
---cpus x default=1 number of cpus for CPU pmap chains
+--cpus x default=4 JAX CPU worker setting for MAP and NUTS; also sets local CPU devices for NUTS pmap
 
 --pi uniform/empirical/F3x4 default=uniform codon equilibrium frequencies
 
