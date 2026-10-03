@@ -61,113 +61,112 @@ CODON_LIST = tuple(
 BASE_TO_INDEX = {base: idx for idx, base in enumerate(BASE_ORDER)}
 
 def get_options():
-    parser = argparse.ArgumentParser(description='TOMBOMBADIL (Tree-free Omega Mapping By Observing Mutations of Bases and Amino acids Distributed Inside Loci)',
-                                     prog='tombombadil')
+    parser = argparse.ArgumentParser(
+        description=(
+            'TOMBOMBADIL (Tree-free Omega Mapping By Observing Mutations of '
+            'Bases and Amino acids Distributed Inside Loci)'
+        ),
+        prog='tombombadil',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
 
-    # input options
-    iGroup = parser.add_argument_group('Input files')
-    iGroup.add_argument('--alignment', type=str, required=True,
-                        help='Alignment file to fit model to')
+    io_group = parser.add_argument_group('Input/output')
+    io_group.add_argument('--alignment', type=str, required=True,
+                          help='Alignment file to fit model to')
+    io_group.add_argument('--output-jax', type=str, default=None, metavar='STEM',
+                          help='Result file stem for generated outputs')
+    io_group.add_argument('--domains', type=str, default=None,
+                          help='Optional domain JSON for colouring per-site omega plots')
+    io_group.add_argument('--reference', type=str, default=None,
+                          help='Reference protein FASTA required with --domains')
 
-    mGroup = parser.add_argument_group('Model options')
-    mGroup.add_argument('--pi', choices=['uniform', 'empirical', 'F3x4'], default='uniform',
-                        help='Codon equilibrium frequencies: uniform or estimated from the alignment '
-                             '(default: uniform)')
-    mGroup.add_argument('--pi-pseudocount', type=float, default=0.5,
-                        help='Pseudocount used when --pi empirical or --pi F3x4 is selected '
-                             '(default: 0.5)')
-    mGroup.add_argument('--omega-mode', choices=['scalar', 'per-site'], default='scalar',
-                        help='Estimate one omega for the alignment or one omega per codon site '
-                             '(default: scalar).')
-    mGroup.add_argument('--domains', type=str, default=None,
-                        help='Optional domain JSON for colouring per-site omega plots.')
-    mGroup.add_argument('--reference', type=str, default=None,
-                        help='Reference protein FASTA required with --domains.')
-    mGroup.add_argument('--estimate-uncertainty', action='store_true', default=False,
-                        help='Compute per-parameter standard errors via diagonal Laplace approximation '
-                             '(Hessian-based). Can be memory-intensive for large alignments.')
-    mGroup.add_argument('--fit-replicates', type=int, default=1, metavar='N',
-                        help='Run the optimiser N times with random perturbations of the starting values '
-                             'and compare their parameter estimates and likelihood traces. The best replicate '
-                             '(highest log-likelihood) is used for all downstream outputs (default: 1).')
-    mGroup.add_argument('--exclude-invariant', action='store_true', default=False,
-                        help='Exclude invariant sites from the data likelihood. By default invariant '
-                             'sites are included.')
-    mGroup.add_argument('--output-jax', type=str, default=None, metavar='STEM',
-                        help='Save parameter/result files with the given stem (default: output). MAP optimisation '
-                             'always saves a likelihood plot and per-site MAP also saves an omega plot.')
-    mGroup.add_argument('--fit-method', choices=['map', 'nuts'], default='map',
-                        help='Fit with MAP optimisation or BlackJAX NUTS sampling (default: map).')
-    mGroup.add_argument('--objective-aggregate', choices=['mean', 'sum'], default='sum',
-                        help='Aggregate site log-likelihoods by mean or sum (default: sum).')
-    mGroup.add_argument('--prior-mode',
-                        choices=['current', 'none', 'stan_constrained', 'stan_unconstrained'],
-                        default='stan_unconstrained',
-                        help='Prior/Jacobian convention for optimisation (default: stan_unconstrained).')
-    mGroup.add_argument('--fix-eta', action='store_true', default=False,
-                        help='Fix eta to 1.0 instead of estimating it.')
-    mGroup.add_argument('--fit-until-convergence', action='store_true', default=False,
-                        help='Stop optimisation early when the objective stops improving.')
-    mGroup.add_argument('--convergence-tol', type=float, default=1e-6,
-                        help='Minimum objective improvement counted as progress (default: 1e-6).')
-    mGroup.add_argument('--convergence-patience', type=int, default=3,
-                        help='Number of convergence checks without progress before stopping (default: 3).')
-    mGroup.add_argument('--convergence-check-every', type=int, default=1,
-                        help='Check convergence every N optimiser steps (default: 1).')
-    mGroup.add_argument('--convergence-min-steps', type=int, default=10,
-                        help='Minimum optimiser steps before convergence can stop fitting (default: 10).')
-    mGroup.add_argument('--num-warmup', type=int, default=1000,
-                        help='Number of BlackJAX NUTS warmup steps per chain (default: 1000).')
-    mGroup.add_argument('--num-samples', type=int, default=1000,
-                        help='Number of BlackJAX NUTS posterior draws per chain (default: 1000).')
-    mGroup.add_argument('--num-chains', type=int, default=4,
-                        help='Number of BlackJAX NUTS chains (default: 4).')
-    mGroup.add_argument('--rng-seed', type=int, default=0,
-                        help='Random seed for BlackJAX NUTS (default: 0).')
-    mGroup.add_argument('--target-acceptance-rate', type=float, default=0.8,
-                        help='Target acceptance rate for BlackJAX window adaptation (default: 0.8).')
+    fit_group = parser.add_argument_group('Fitting method')
+    fit_group.add_argument('--fit-method', choices=['map', 'nuts'], default='map',
+                           help='Fit with MAP optimisation or BlackJAX NUTS sampling')
 
-    dGroup = parser.add_argument_group('Diagnostic fixed-parameter scoring')
-    dGroup.add_argument('--diagnostic-fixed-params', action='store_true', default=False,
-                        help='Evaluate the scalar-GTR objective at fixed natural-scale parameters and exit.')
-    dGroup.add_argument('--diagnostic-alpha', type=float, default=1.0)
-    dGroup.add_argument('--diagnostic-beta', type=float, default=1.0)
-    dGroup.add_argument('--diagnostic-gamma', type=float, default=1.0)
-    dGroup.add_argument('--diagnostic-delta', type=float, default=1.0)
-    dGroup.add_argument('--diagnostic-epsilon', type=float, default=1.0)
-    dGroup.add_argument('--diagnostic-eta', type=float, default=1.0)
-    dGroup.add_argument('--diagnostic-theta', type=float, default=0.5)
-    dGroup.add_argument('--diagnostic-omega', type=float, default=0.5)
-    dGroup.add_argument('--diagnostic-prior-mode',
-                        choices=['none', 'current', 'stan_constrained', 'stan_unconstrained'],
-                        default='none',
-                        help='Prior/Jacobian convention for fixed scoring (default: none).')
-    dGroup.add_argument('--diagnostic-aggregate', choices=['sum', 'mean'], default='sum',
-                        help='Aggregate site log-likelihoods for fixed scoring (default: sum).')
-    dGroup.add_argument('--diagnostic-fix-eta', action='store_true', default=False,
-                        help='Score with eta fixed to 1.0 instead of using --diagnostic-eta.')
-    dGroup.add_argument('--diagnostic-enable-jitter', action='store_true', default=False,
-                        help='Enable the JAX eigen jitter while fixed scoring (default: disabled).')
-    dGroup.add_argument('--diagnostic-enable-omega-floor', action='store_true', default=False,
-                        help='Enable the JAX omega gradient floor while fixed scoring (default: disabled).')
+    runtime_group = parser.add_argument_group('CPU/runtime')
+    runtime_group.add_argument('--platform', choices=['cpu', 'gpu', 'tpu'], default='cpu',
+                               help='Which hardware/device to run on')
+    runtime_group.add_argument('--cpus', type=_positive_int, default=4,
+                               help='JAX worker setting on CPU; also sets local devices for NUTS pmap')
 
-    sGroup = parser.add_argument_group('Sampling options')
-    sGroup.add_argument('--sample-it', type=int, default=500,
-                        help='Sampling iterations')
+    model_group = parser.add_argument_group('Shared model options')
+    model_group.add_argument('--pi', choices=['uniform', 'empirical', 'F3x4'], default='uniform',
+                             help='Codon equilibrium frequencies')
+    model_group.add_argument('--pi-pseudocount', type=float, default=0.5,
+                             help='Pseudocount for empirical or F3x4 codon frequencies')
+    model_group.add_argument('--omega-mode', choices=['scalar', 'per-site'], default='scalar',
+                             help='Estimate one omega for the alignment or one per codon site')
+    model_group.add_argument('--objective-aggregate', choices=['mean', 'sum'], default='sum',
+                             help='Aggregate site log-likelihoods by mean or sum')
+    model_group.add_argument('--prior-mode',
+                             choices=['current', 'none', 'stan_constrained', 'stan_unconstrained'],
+                             default='stan_unconstrained',
+                             help='Prior/Jacobian convention for model fitting')
+    model_group.add_argument('--fix-eta', action='store_true', default=False,
+                             help='Fix eta to 1.0 instead of estimating it')
+    model_group.add_argument('--exclude-invariant', action='store_true', default=False,
+                             help='Exclude invariant sites from the data likelihood')
 
-    hGroup = parser.add_argument_group('Hardware options')
-    hGroup.add_argument('--platform', choices=['cpu', 'gpu', 'tpu'], default='cpu',
-                        help='Which hardware/device to run on')
-    hGroup.add_argument('--cpus', type=_positive_int, default=4,
-                        help='JAX worker setting on the CPU backend for MAP and NUTS (default: 4). '
-                             'For CPU NUTS pmap, also sets the number of local CPU devices')
-    hGroup.add_argument('--nuts-chain-mode', choices=['sequential', 'pmap'], default='sequential',
-                        help='Run NUTS chains sequentially or in parallel across JAX devices '
-                             '(default: sequential).')
+    map_group = parser.add_argument_group('MAP / Optax')
+    map_group.add_argument('--max-it', type=_positive_int, default=500, metavar='N',
+                           help='Maximum MAP optimisation iterations')
+    map_group.add_argument('--fit-replicates', type=int, default=1, metavar='N',
+                           help='Run N perturbed starts and select the best MAP fit')
+    map_group.add_argument('--estimate-uncertainty', action='store_true', default=False,
+                           help='Estimate parameter standard errors with a diagonal Laplace approximation')
+    map_group.add_argument('--fixed-iterations', action='store_true', default=False,
+                           help='Run all --max-it steps without early convergence')
+    map_group.add_argument('--convergence-tol', type=float, default=1e-6,
+                           help='Minimum objective improvement counted as progress')
+    map_group.add_argument('--convergence-patience', type=int, default=3,
+                           help='Convergence checks without progress before stopping')
+    map_group.add_argument('--convergence-check-every', type=int, default=1,
+                           help='Check convergence every N optimizer steps')
+    map_group.add_argument('--convergence-min-steps', type=int, default=10,
+                           help='Minimum steps before convergence can stop fitting')
 
-    other = parser.add_argument_group('Other options')
-    other.add_argument('--version', action='version',
-                       version='%(prog)s '+__version__)
+    nuts_group = parser.add_argument_group('NUTS / BlackJAX')
+    nuts_group.add_argument('--num-warmup', type=int, default=1000,
+                             help='NUTS warmup steps per chain')
+    nuts_group.add_argument('--num-samples', type=int, default=1000,
+                             help='NUTS posterior draws per chain')
+    nuts_group.add_argument('--num-chains', type=int, default=4,
+                             help='Number of NUTS chains')
+    nuts_group.add_argument('--rng-seed', type=int, default=0,
+                             help='Random seed for NUTS')
+    nuts_group.add_argument('--target-acceptance-rate', type=float, default=0.8,
+                             help='Target acceptance rate for NUTS adaptation')
+    nuts_group.add_argument('--nuts-chain-mode', choices=['sequential', 'pmap'], default='sequential',
+                             help='Run NUTS chains sequentially or in parallel across JAX devices')
+
+    diagnostic_group = parser.add_argument_group('Fixed-parameter diagnostics')
+    diagnostic_group.add_argument('--diagnostic-fixed-params', action='store_true', default=False,
+                                  help='Evaluate the scalar-GTR objective at fixed natural-scale parameters and exit')
+    diagnostic_group.add_argument('--diagnostic-alpha', type=float, default=1.0)
+    diagnostic_group.add_argument('--diagnostic-beta', type=float, default=1.0)
+    diagnostic_group.add_argument('--diagnostic-gamma', type=float, default=1.0)
+    diagnostic_group.add_argument('--diagnostic-delta', type=float, default=1.0)
+    diagnostic_group.add_argument('--diagnostic-epsilon', type=float, default=1.0)
+    diagnostic_group.add_argument('--diagnostic-eta', type=float, default=1.0)
+    diagnostic_group.add_argument('--diagnostic-theta', type=float, default=0.5)
+    diagnostic_group.add_argument('--diagnostic-omega', type=float, default=0.5)
+    diagnostic_group.add_argument('--diagnostic-prior-mode',
+                                  choices=['none', 'current', 'stan_constrained', 'stan_unconstrained'],
+                                  default='none',
+                                  help='Prior/Jacobian convention for fixed scoring')
+    diagnostic_group.add_argument('--diagnostic-aggregate', choices=['sum', 'mean'], default='sum',
+                                  help='Aggregate site log-likelihoods for fixed scoring')
+    diagnostic_group.add_argument('--diagnostic-fix-eta', action='store_true', default=False,
+                                  help='Score with eta fixed to 1.0 instead of using --diagnostic-eta')
+    diagnostic_group.add_argument('--diagnostic-enable-jitter', action='store_true', default=False,
+                                  help='Enable eigen jitter while fixed scoring')
+    diagnostic_group.add_argument('--diagnostic-enable-omega-floor', action='store_true', default=False,
+                                  help='Enable the omega gradient floor while fixed scoring')
+
+    other_group = parser.add_argument_group('Other options')
+    other_group.add_argument('--version', action='version',
+                             version='%(prog)s '+__version__)
 
     args = parser.parse_args()
     return args
@@ -230,7 +229,7 @@ def count_codons(file_name):
 
     return X, n_samples
 
-def estimate_pi_from_counts(X, pseudocount=0.5):
+def estimate_pi_from_counts(X, pseudocount):
     X = np.asarray(X)
     if X.shape[0] != 61:
         raise ValueError(f"Expected codon count matrix with 61 rows, got {X.shape[0]}")
@@ -253,7 +252,7 @@ def estimate_pi_from_counts(X, pseudocount=0.5):
         )
     return pi
 
-def estimate_f3x4_frequencies_from_counts(X, pseudocount=0.5):
+def estimate_f3x4_frequencies_from_counts(X, pseudocount):
     X = np.asarray(X)
     if X.shape[0] != 61:
         raise ValueError(f"Expected codon count matrix with 61 rows, got {X.shape[0]}")
@@ -281,7 +280,7 @@ def estimate_f3x4_frequencies_from_counts(X, pseudocount=0.5):
 
     return frequencies
 
-def estimate_f3x4_pi_from_counts(X, pseudocount=0.5):
+def estimate_f3x4_pi_from_counts(X, pseudocount):
     frequencies = estimate_f3x4_frequencies_from_counts(X, pseudocount)
     pi = np.array(
         [
@@ -401,11 +400,11 @@ def main():
     if options.fit_method == "map":
         run_map_optimizer(
             fn, start_params, mask,
-            samples=options.sample_it,
+            max_it=options.max_it,
             estimate_uncertainty=options.estimate_uncertainty,
             fit_replicates=options.fit_replicates,
             output=options.output_jax,
-            fit_until_convergence=options.fit_until_convergence,
+            fit_until_convergence=not options.fixed_iterations,
             convergence_tol=options.convergence_tol,
             convergence_patience=options.convergence_patience,
             convergence_check_every=options.convergence_check_every,

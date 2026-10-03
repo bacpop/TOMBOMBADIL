@@ -29,7 +29,16 @@ class TestLikelihoodGradientReference(unittest.TestCase):
         X[47, 0] = 19
         pi = np.full(61, 1 / 61)
         log_pi, pimat, pimatinv, pimult = transforms(X, pi)
-        fn = make_fn(pi, log_pi, pimat, pimatinv, pimult, X, jnp.ones(1))
+        fn = make_fn(
+            pi, log_pi, pimat, pimatinv, pimult, X, jnp.ones(1),
+            include_invariant=True,
+            aggregate="mean",
+            prior_mode="current",
+            estimate_eta=False,
+            eigen_jitter=True,
+            omega_floor=True,
+            omega_mode="scalar",
+        )
         params = {
             "alpha": softplus_inverse(1.0),
             "beta": softplus_inverse(1.0),
@@ -85,11 +94,10 @@ class TestPerSiteMapIntegration(unittest.TestCase):
                 "per-site",
                 "--fit-method",
                 "map",
-                "--sample-it",
+                "--max-it",
                 "500",
                 "--output-jax",
                 str(output_stem),
-                "--fit-until-convergence",
                 "--convergence-patience",
                 "5",
                 "--convergence-check-every",

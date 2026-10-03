@@ -177,8 +177,8 @@ def _log_transform_jacobian(raw_value):
     return jnp.log(jnp.exp(raw_value))
 
 
-def prior_log_likelihood(raw_x, n_sites, prior_mode="current", estimate_eta=False,
-                         omega_mode="scalar", aggregate="sum"):
+def prior_log_likelihood(raw_x, n_sites, *, prior_mode, estimate_eta,
+                         omega_mode, aggregate):
     """Log prior contributions for MAP regularisation.
 
     The data log-likelihood is mean-aggregated over sites (mean(losses)), which
@@ -242,9 +242,8 @@ def prior_log_likelihood(raw_x, n_sites, prior_mode="current", estimate_eta=Fals
 
 
 def make_fn(pi_eq, log_pi, pimat, pimatinv, pimult, X, mask,
-            include_invariant=True, aggregate="mean", prior_mode="current",
-            estimate_eta=False, eigen_jitter=True, omega_floor=True,
-            omega_mode="scalar"): # closure for defining fn
+            *, include_invariant, aggregate, prior_mode, estimate_eta,
+            eigen_jitter, omega_floor, omega_mode): # closure for defining fn
     validate_omega_mode(omega_mode)
     model_fn = model if eigen_jitter else model_no_jitter
     omega_axis = None if omega_mode == "scalar" else 0
@@ -298,7 +297,7 @@ def make_fn(pi_eq, log_pi, pimat, pimatinv, pimult, X, mask,
     return f
 
 
-def natural_to_raw_params(params, omega_mode="scalar"):
+def natural_to_raw_params(params, *, omega_mode):
     """Convert positive natural-scale parameters to this code's raw log scale."""
     validate_omega_mode(omega_mode)
     return {k: jnp.array(softplus_inverse(v), dtype=jnp.float64) for k, v in params.items()}
@@ -310,7 +309,7 @@ def make_mask(X):
     return np.where(col_max == col_sum, 0, 1)
 
 
-def make_base_params(estimate_eta=True, n_sites=None, omega_mode="scalar"):
+def make_base_params(*, estimate_eta, n_sites=None, omega_mode):
     """Build default raw initial parameters for scalar-GTR fitting."""
     validate_omega_mode(omega_mode)
     if omega_mode == "per-site" and n_sites is None:
@@ -337,10 +336,9 @@ def make_param_labels(params):
             for k, v in params.items()}
 
 
-def evaluate_fixed_params(X, pi_eq, natural_params, include_invariant=True,
-                          aggregate="sum", prior_mode="none",
-                          estimate_eta=True, eigen_jitter=False,
-                          omega_floor=False, omega_mode="scalar"):
+def evaluate_fixed_params(X, pi_eq, natural_params, *, include_invariant,
+                          aggregate, prior_mode, estimate_eta, eigen_jitter,
+                          omega_floor, omega_mode):
     """Evaluate the scalar-GTR objective at fixed natural-scale parameters."""
     log_pi, pimat, pimatinv, pimult = transforms(X, pi_eq)
     mask = make_mask(X)
@@ -514,7 +512,7 @@ def compute_laplace_se(fn, params):
     return se_raw, se_natural
 
 
-def _log_laplace_summary(params, se_natural, omega_mode="scalar"):
+def _log_laplace_summary(params, se_natural, *, omega_mode):
     """Log a human-readable summary of MAP estimates ± 1 SE (natural scale)."""
     validate_omega_mode(omega_mode)
     gtr_keys = GTR_PARAM_KEYS_WITH_ETA
@@ -534,7 +532,7 @@ def _log_laplace_summary(params, se_natural, omega_mode="scalar"):
 
 
 def save_params(output_stem: str, params: dict, mask: np.ndarray = None,
-                omega_mode="scalar") -> None:
+                *, omega_mode) -> None:
     """Save MAP scalar parameter estimates to CSV.
 
     scalar_<stem>_Allparams.csv — scalar-mode parameters
@@ -624,7 +622,7 @@ def _posterior_draws_natural(raw_samples):
     return {k: positive(v) for k, v in raw_samples.items()}
 
 
-def summarize_posterior_samples(raw_samples, infos, omega_mode="scalar"):
+def summarize_posterior_samples(raw_samples, infos, *, omega_mode):
     """Summarize posterior samples and BlackJAX diagnostics on natural scale."""
     samples = _posterior_draws_natural(raw_samples)
     validate_omega_mode(omega_mode)
@@ -663,7 +661,7 @@ def summarize_posterior_samples(raw_samples, infos, omega_mode="scalar"):
     return samples, summaries, diagnostics
 
 
-def save_posterior_outputs(output_stem, raw_samples, summaries, omega_mode="scalar"):
+def save_posterior_outputs(output_stem, raw_samples, summaries, *, omega_mode):
     """Save posterior draws and scalar summaries to CSV files."""
     samples = _posterior_draws_natural(raw_samples)
     validate_omega_mode(omega_mode)
@@ -721,10 +719,9 @@ def _log_posterior_summary(summaries, diagnostics):
     )
 
 
-def run_nuts_sampler(fn, start_params, num_warmup=1000, num_samples=1000,
-                     num_chains=4, rng_seed=0, target_acceptance_rate=0.8,
-                     output=None, print_summary=True,
-                     chain_mode="sequential", omega_mode="scalar"):
+def run_nuts_sampler(fn, start_params, *, num_warmup, num_samples,
+                     num_chains, rng_seed, target_acceptance_rate, output,
+                     print_summary=True, chain_mode, omega_mode):
     """Run BlackJAX NUTS from raw unconstrained starting parameters."""
     if chain_mode not in ("sequential", "pmap"):
         raise ValueError(f"Unknown NUTS chain mode: {chain_mode}")
@@ -799,7 +796,7 @@ def _perturb_params(params, scale=0.5):
     return unflatten(flat + noise)
 
 
-def _run_replicates(fn, start_params, param_labels, n_reps, n_iter=100,
+def _run_replicates(fn, start_params, param_labels, n_reps, *, n_iter,
                     convergence=None, progress=True):
     """Run the optimizer n_reps times and return all results plus the index of the best.
 
@@ -942,7 +939,7 @@ def plot_likelihood_history(all_metadata, best_idx):
     return fig, ax
 
 
-def plot_per_site_omega(params, mask=None, domain_labels=None):
+def plot_per_site_omega(params, mask=None, *, domain_labels):
     """Plot per-site omega estimates, optionally coloured by domain labels."""
     omega = np.asarray(positive(params["omega"]))
     sites = np.arange(1, len(omega) + 1)
@@ -1062,12 +1059,11 @@ def _prepare_model(X, pi_eq, include_invariant, aggregate, prior_mode,
     return fn, base_params, mask
 
 
-def run_map_optimizer(fn, start_params, mask, samples=500,
-                      estimate_uncertainty=False, fit_replicates=1,
-                      output=None, fit_until_convergence=False,
-                      convergence_tol=1e-6, convergence_patience=5,
-                      convergence_check_every=10, convergence_min_steps=50,
-                      omega_mode="scalar", domain_labels=None):
+def run_map_optimizer(fn, start_params, mask, *, max_it,
+                      estimate_uncertainty, fit_replicates, output,
+                      fit_until_convergence, convergence_tol,
+                      convergence_patience, convergence_check_every,
+                      convergence_min_steps, omega_mode, domain_labels):
     """Run MAP optimization and write its result files and diagnostics."""
     base_labels = make_param_labels(start_params)
     result_stem = output if output is not None else "output"
@@ -1082,7 +1078,7 @@ def run_map_optimizer(fn, start_params, mask, samples=500,
             "min_steps": convergence_min_steps,
         }
     all_params, best_idx, all_metadata = _run_replicates(
-        fn, start_params, base_labels, fit_replicates, n_iter=samples,
+        fn, start_params, base_labels, fit_replicates, n_iter=max_it,
         convergence=convergence,
     )
     params = all_params[best_idx]

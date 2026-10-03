@@ -115,8 +115,12 @@ class TestCpuWorkerConfiguration(unittest.TestCase):
                 num_warmup=5,
                 num_samples=6,
                 num_chains=2,
+                rng_seed=0,
+                target_acceptance_rate=0.8,
+                output=None,
                 print_summary=False,
                 chain_mode="pmap",
+                omega_mode="scalar",
             )
             assert result["samples"]["alpha"].shape == (2, 6)
             """

@@ -2,8 +2,8 @@
 
 Example:
     python -m test.run_map_benchmark --alignment porB3_aligned.fasta \
-      --omega-mode per-site --fit-method map --sample-it 500 \
-      --output-jax /tmp/porB3_map --fit-until-convergence \
+      --omega-mode per-site --fit-method map --max-it 500 \
+      --output-jax /tmp/porB3_map \
       --exclude-invariant --platform cpu
 """
 

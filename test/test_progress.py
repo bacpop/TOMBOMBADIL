@@ -106,7 +106,7 @@ class TestMapProgressHistory(unittest.TestCase):
                 [softplus_inverse(0.1), softplus_inverse(0.5)], dtype=jnp.float64
             )
         }
-        fig, ax = plot_per_site_omega(params)
+        fig, ax = plot_per_site_omega(params, domain_labels=None)
         try:
             self.assertEqual(ax.get_yscale(), "linear")
             self.assertEqual(ax.get_ylim(), (0.0, 1.0))
@@ -122,7 +122,7 @@ class TestMapProgressHistory(unittest.TestCase):
                 [softplus_inverse(0.1), softplus_inverse(2.0)], dtype=jnp.float64
             )
         }
-        fig, ax = plot_per_site_omega(params)
+        fig, ax = plot_per_site_omega(params, domain_labels=None)
         try:
             self.assertEqual(ax.get_ylim(), (0.0, 2.0))
         finally:
@@ -168,8 +168,17 @@ class TestMapProgressHistory(unittest.TestCase):
                         fn,
                         start_params,
                         mask,
-                        samples=1,
+                        max_it=1,
+                        estimate_uncertainty=False,
+                        fit_replicates=1,
+                        output=None,
+                        fit_until_convergence=False,
+                        convergence_tol=1e-6,
+                        convergence_patience=5,
+                        convergence_check_every=10,
+                        convergence_min_steps=50,
                         omega_mode="per-site",
+                        domain_labels=None,
                     )
                 expected_files = (
                     "per_site_output_GTRparams.csv",

@@ -17,24 +17,27 @@ from later optimization time, result output uses logging and default files,
 and the per-site omega plot uses a linear scale. Numerical references pass.
 MAINT-06 is complete. Shared model preparation and MAP execution have dedicated
 functions; `main()` prepares the model and dispatches directly to MAP or NUTS.
+MAINT-07 is complete. CLI help is grouped by workflow, MAP uses `--max-it` with
+early convergence enabled by default, and former CLI-owned function defaults
+are explicit at call sites. Numerical references remain unchanged.
 
 # Current Task
 
-## MAINT-06 — Separate MAP and NUTS execution paths
+## MAINT-07 — CLI organisation
 
-Call `_prepare_model()` from `main()`, then dispatch there to distinct MAP and
-NUTS execution paths. Remove the redundant `run_sampler()` wrapper and update
-existing test call sites. Preserve MAP and NUTS behavior, output conventions,
-and the `_run_replicates` benchmark timing boundary.
+Reorder CLI help into primary input/output, fitting method, and runtime groups,
+then separate shared model, MAP/Optax, NUTS/BlackJAX, diagnostics, and other
+options. Use `--max-it` for MAP, enable early convergence by default, and remove
+the redundant function defaults that duplicate CLI-owned settings.
 
 ### Checklist
 
-- [x] Extract shared transform, mask, parameter, and model-function setup into a preparation helper.
-- [x] Extract the MAP optimization, result selection, plotting, uncertainty, and output logic into a dedicated function.
-- [x] Call `_prepare_model()` from `main()` and move its `if map / elif nuts` dispatch there.
-- [x] Remove `run_sampler()` and update all existing test call sites to the appropriate preparation, MAP, NUTS, or CLI entry point.
-- [x] Preserve output filename conventions, sampler behavior, and `_run_replicates` signature/location/timing boundary.
-- [x] Run the existing full test suite, CLI help check, and `git diff --check`; preserve protected numerical references and tolerances.
+- [x] Reorder help groups: Input/output, Fitting method, CPU/runtime, Shared model, MAP/Optax, NUTS/BlackJAX, diagnostics, Other; show defaults from parser values.
+- [x] Replace `--sample-it` with positive `--max-it` for MAP (default 500); remove `--fit-until-convergence`, enable convergence by default, and add `--fixed-iterations` to disable it. Retain `--num-samples` for NUTS (default 1000); reject the removed flags.
+- [x] Remove function defaults that duplicate CLI-owned settings from model/prior, parameter conversion and initialization, fitting, uncertainty/output/posterior/plot, pseudocount, CPU configuration, and replicate iteration helpers. Keep optional data and internal control defaults.
+- [x] Update every repository caller to pass former defaults explicitly, preserving each caller's existing effective values and the protected numerical references.
+- [x] Update README examples, test commands, and benchmark usage for the new option names and default convergence behavior.
+- [x] Run parser/help checks, relevant existing tests, the protected MAP integration test with pinned 5/10/50 convergence settings, the full suite, and `git diff --check`.
 - [x] Update Current Status, Design Notes, Session Log, blockers, and Next Task.
 
 ### Guardrails
@@ -52,7 +55,7 @@ Performance comparisons must use comparable inputs, configuration, hardware, and
 
 # Next Task
 
-After MAINT-06 is complete, continue with MAINT-07 — CLI organisation. Do not begin it automatically.
+After MAINT-07 is complete, continue with MAINT-08 — Move I/O functions out of `__main__`. Do not begin it automatically.
 
 ---
 
@@ -111,7 +114,7 @@ The test must use fixed reference values and explicit floating-point tolerances.
 
 Add an integration test equivalent to:
 
-`python -m tombombadil --alignment porB3_aligned.fasta --omega-mode per-site --fit-method map --sample-it 500 --output-jax porB3_map --fit-until-convergence --exclude-invariant`
+`python -m tombombadil --alignment porB3_aligned.fasta --omega-mode per-site --fit-method map --max-it 500 --output-jax porB3_map --exclude-invariant --convergence-patience 5 --convergence-check-every 10 --convergence-min-steps 50`
 
 Check that the following remain within documented tolerances of reference values:
 
@@ -195,12 +198,12 @@ Clearly separate options specific to:
 - MAP / Optax
 - NUTS / BlackJAX
 
-For MAP mode, change `--sample-it` to `--max-it`.
+For MAP mode, replace `--sample-it` with `--max-it` and make early convergence
+the default. `--fixed-iterations` opts out. `--sample-it` is removed; NUTS
+continues to use `--num-samples`.
 
-Make early convergence the default for MAP optimisation.
-
-Setting defaults both in the CLI parser, and in function arguments is
-confusing. Remove defaults in functions where these are set at input.
+Remove function defaults for settings owned by the CLI parser. Keep defaults
+for optional data and internal controls that have no CLI counterpart.
 
 ### MAINT-08 — Move I/O functions out of `__main__`
 
@@ -495,6 +498,32 @@ in 187.61 s; protected numerical references remained unchanged. CLI help and
 benchmark was needed because optimizer execution and the `_run_replicates`
 timing boundary are unchanged.
 
+### 2026-10-03 — Organize CLI options and remove duplicated defaults
+
+**Context:** MAINT-07 requested clearer help sections, explicit MAP iteration
+semantics, and a single source of truth for settings already owned by the CLI.
+
+**Decision:** Order CLI groups from input/output and fitting/runtime through
+shared model settings, MAP, NUTS, diagnostics, and other options. Use
+`ArgumentDefaultsHelpFormatter` to display parser values. Make `--max-it` the
+positive MAP iteration limit (default 500); enable existing early-convergence
+settings by default and let `--fixed-iterations` opt out. Keep NUTS draws on
+`--num-samples`, and remove `--sample-it` and `--fit-until-convergence` from
+the CLI. Remove matching function defaults and require callers to pass values
+explicitly, preserving each call site's former effective configuration.
+
+**Rationale:** The CLI parser remains authoritative for user-facing settings,
+and grouped help makes MAP and NUTS controls easier to distinguish. Required
+function arguments expose omitted configuration at call sites without changing
+their behavior.
+
+**Consequences:** The protected likelihood/gradient test now spells out its
+former effective `make_fn` configuration (`include_invariant=True`,
+`aggregate="mean"`, `prior_mode="current"`, `estimate_eta=False`, jitter and
+omega floor enabled, scalar omega). The MAP fixture continues to pin its
+established 5/10/50 convergence settings. No reference value or tolerance is
+changed.
+
 # Blockers
 
 None.
@@ -651,6 +680,37 @@ requested.
 **Blockers:** None.
 
 **Next:** MAINT-07 — CLI organisation; do not begin until requested.
+
+## 2026-10-03 — MAINT-07 CLI organisation
+
+**Task:** MAINT-07 — CLI organisation
+
+**Completed:**
+- Grouped CLI help by input/output, fitting method, runtime, shared model,
+  MAP/Optax, NUTS/BlackJAX, fixed-parameter diagnostics, and other options.
+- Replaced MAP `--sample-it` with positive `--max-it` (default 500), enabled
+  early convergence by default with the existing 3/1/10 settings, and added
+  `--fixed-iterations`. NUTS continues to use `--num-samples`; removed flags
+  are rejected.
+- Removed CLI-owned function defaults and updated repository callers and
+  examples to pass the prior effective values explicitly. Kept optional data
+  and internal-control defaults.
+- Recorded the protected likelihood/gradient function's former settings
+  explicitly and kept MAP fixture convergence pinned to 5/10/50.
+
+**Tests:**
+- Focused parser, helper, progress, and CPU configuration tests: 56 passed,
+  10 subtests passed.
+- `python -m pytest test/test_baselines.py -q`: 2 passed, including the fixed
+  likelihood/gradient oracle and pinned MAP integration test.
+- `python -m pytest -q`: 60 passed, 10 subtests passed, with 2 existing
+  dependency deprecation warnings; completed in 180.26 s.
+- `python -m tombombadil --help` and `git diff --check` succeeded.
+
+**Blockers:** None.
+
+**Next:** MAINT-08 — Move I/O functions out of `__main__`; do not begin until
+requested.
 
 ---
 

@@ -34,8 +34,11 @@ Estimate dN/dS using TOMBOMBADIL by running one of the following commands from w
 
 Fit one omega estimate for the whole alignment (scalar omega) with maximum a posteriori (MAP) optimisation (default)
 ```bash
-python -m tombombadil --alignment alignment.fas.aln --fit-replicates 4 --fit-until-convergence --output-jax output.txt
+python -m tombombadil --alignment alignment.fas.aln --fit-replicates 4 --output-jax output.txt
 ```
+
+MAP fitting stops early when convergence is reached by default. Use
+`--fixed-iterations` to run all `--max-it` optimizer steps.
 
 Fit one omega estimate for per codon position in the alignment with maximum a posteriori (MAP) optimisation
 ```bash
@@ -79,14 +82,15 @@ The repository includes the example codon alignment of porin porB of *Neisseria 
 (takes around 30 seconds on one cpu core)
 
 This is the default model: one omega is estimated for the complete alignment.
-`--sample-it` controls the number of MAP optimisation steps.
+`--max-it` sets the maximum number of MAP optimisation steps; convergence
+stopping is enabled by default.
 
 ```bash
 python -m tombombadil \
   --alignment porB3_aligned.fasta \
   --omega-mode scalar \
   --fit-method map \
-  --sample-it 500 \
+  --max-it 500 \
   --output-jax porB3_map
 ```
 
@@ -102,7 +106,7 @@ python -m tombombadil \
   --alignment porB3_aligned.fasta \
   --omega-mode per-site \
   --fit-method map \
-  --sample-it 500 \
+  --max-it 500 \
   --output-jax porB3_map
 ```
 
@@ -180,7 +184,9 @@ visible.
 # More options
 --convergence-tol x default=1e-6
 
---sample-it x number of sampling steps
+--max-it x maximum MAP optimisation steps (default=500)
+
+--fixed-iterations disable early convergence and run all MAP steps
 
 --platform gpu/cpu/tpu
 

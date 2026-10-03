@@ -27,7 +27,7 @@ def _host_device_count_flags(existing_flags, cpus):
     return re.sub(r"\s{2,}", " ", flags).strip()
 
 
-def configure_platform(platform, *, cpus=4, force_cpu_devices=False):
+def configure_platform(platform, *, cpus, force_cpu_devices=False):
     if platform not in SUPPORTED_PLATFORMS:
         raise ValueError(f"Unsupported JAX platform: {platform!r}")
     try:
