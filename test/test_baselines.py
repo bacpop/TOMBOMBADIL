@@ -119,9 +119,9 @@ class TestPerSiteMapIntegration(unittest.TestCase):
                 r"MAP replicate 1/1, step 10/500: log-likelihood =",
             )
             likelihood_match = re.search(
-                r"Final likelihood:\s*([-+0-9.eE]+)", result.stdout
+                r"Final log-likelihood:\s*([-+0-9.eE]+)", result.stderr
             )
-            self.assertIsNotNone(likelihood_match, result.stdout)
+            self.assertIsNotNone(likelihood_match, result.stderr)
             np.testing.assert_allclose(
                 float(likelihood_match.group(1)),
                 reference["log_likelihood"],
@@ -134,7 +134,11 @@ class TestPerSiteMapIntegration(unittest.TestCase):
             likelihood_plot = output_stem.parent / (
                 f"per_site_{output_stem.name}_likelihood_plot.pdf"
             )
+            omega_plot = output_stem.parent / (
+                f"per_site_{output_stem.name}_omega_plot.pdf"
+            )
             self.assertGreater(likelihood_plot.stat().st_size, 0)
+            self.assertGreater(omega_plot.stat().st_size, 0)
             with gtr_path.open(newline="") as handle:
                 observed_gtr = {
                     row["variable"]: float(row["value"])

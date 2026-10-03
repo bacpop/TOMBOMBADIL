@@ -11,24 +11,32 @@ Do not begin a backlog item merely because it appears in this file. Work only on
 
 MAINT-01 and MAINT-02 are complete. The CPU worker count now configures MAP and
 NUTS on the CPU backend; the full test suite and numerical references pass.
+The MAINT-03, MAINT-04, and MAINT-05 batch is complete. MAP objective values
+are reported at every step, compilation-inclusive startup time is separated
+from later optimization time, result output uses logging and default files,
+and the per-site omega plot uses a linear scale. Numerical references pass.
 
 # Current Task
 
-## MAINT-02 — CPU/thread configuration
+## MAINT-03, MAINT-04, and MAINT-05 — Compilation logging, consistent output, and omega plot
 
-Make `--cpus` configure JAX CPU workers for MAP and NUTS. Default to 4, accept explicit positive values such as 1, and treat this as a worker setting rather than a strict process CPU cap. Apply this only to the CPU backend.
+Complete the original MAINT-03, MAINT-05, and MAINT-06 together. At the start
+of this batch, renumber the backlog so consistent output becomes MAINT-04,
+omega plotting becomes MAINT-05, and the existing MAP/NUTS path separation
+task becomes MAINT-06.
 
 ### Checklist
 
-- [x] Default `--cpus` to 4, validate that it is positive, and apply it to MAP and both NUTS chain modes on CPU.
-- [x] Set the JAX worker setting before JAX is imported or its CPU backend is initialized; make the CLI value take precedence over an existing `NPROC` value.
-- [x] For CPU NUTS `pmap`, make the host device count match `--cpus` while preserving unrelated `XLA_FLAGS` entries.
-- [x] Leave GPU and TPU behavior unchanged; document that `--cpus` is a JAX worker setting, not a strict process CPU cap.
-- [x] Add tests for default 4, explicit 1, invalid values, environment precedence, pmap device count, and startup ordering in a fresh process.
-- [x] Run a small two-chain NUTS `pmap` subprocess smoke check with four CPU devices.
-- [x] Repeat the short MAP CPU usage probe with `--cpus 1` and `--cpus 4`; record worker behavior without using a fragile CPU percentage assertion as a unit test.
-- [x] Record a warmed per-site MAP benchmark with the default of 4 and the existing benchmark timing boundary.
-- [x] Run the full test suite and preserve the likelihood/gradient and MAP numerical references.
+- [x] Renumber MAINT-05 to MAINT-04, MAINT-06 to MAINT-05, and the existing MAINT-04 to MAINT-06.
+- [x] Report and record MAP objective values at step 0 and after every optimizer update in the progress display, logs, and likelihood plot; preserve configured convergence checks and best-replicate selection.
+- [x] Log a compilation-inclusive startup duration covering the initial objective evaluation and first optimizer update, separately from the remaining optimization duration.
+- [x] Replace final-result prints with logging for MAP, NUTS, Laplace summaries, and fixed-parameter diagnostics.
+- [x] Always write MAP estimate and NUTS posterior CSVs. Without `--output-jax`, use the `output` stem and existing mode-prefixed filename conventions; preserve current CSV schemas.
+- [x] Plot per-site omega on a linear axis from zero, use plain numeric y ticks where practical, and keep the omega=1 guide visible (the upper limit may therefore be 1 when the observed maximum is lower).
+- [x] Save the per-site omega plot with a default mode-prefixed filename when no output stem is supplied; document default result files.
+- [x] Add or update focused tests for every-step objective history/reporting, logging, default and explicit output paths, and omega plot scale and tick formatting.
+- [x] Run the full test suite and help check; preserve protected numerical references and tolerances.
+- [x] Record a warmed MAP benchmark with the existing timing boundary.
 - [x] Update Current Status, Design Notes, Session Log, blockers, and Next Task.
 
 ### Guardrails
@@ -46,7 +54,7 @@ Performance comparisons must use comparable inputs, configuration, hardware, and
 
 # Next Task
 
-Continue with MAINT-03 — Compilation logging. Do not begin it automatically.
+Continue with MAINT-06 — Separate MAP and NUTS execution paths. Do not begin it automatically.
 
 ---
 
@@ -151,18 +159,10 @@ Investigate and ensure the requested CPU/thread configuration is respected.
 
 Make it clear in logging that JAX model compilation is a one-off cost rather than part of steady-state optimisation performance.
 
-Change the progress bar to report the log-likelihood every step,
+Change the progress bar and plot to report the log-likelihood every step,
 accepting the slight hit to performance for this evaluation.
 
-### MAINT-04 — Separate MAP and NUTS execution paths
-
-The current `run_sampler` control flow between ML/MAP and NUTS is unclear and relies on an early return.
-
-Separate these into explicit execution paths/functions.
-
-Do not alter BlackJAX behaviour unless necessary for this separation.
-
-### MAINT-05 — Consistent output/logging
+### MAINT-04 — Consistent output/logging
 
 Remove the mixture of `print` and logging for final output.
 
@@ -170,11 +170,19 @@ Use logging consistently.
 
 Write final parameter estimates and dN/dS results to output files rather than printing them.
 
-### MAINT-06 — Omega plot
+### MAINT-05 — Omega plot
 
 Scale the omega plot from zero to the observed maximum.
 
 Avoid scientific-notation labels on the y-axis where practical.
+
+### MAINT-06 — Separate MAP and NUTS execution paths
+
+The current `run_sampler` control flow between ML/MAP and NUTS is unclear and relies on an early return.
+
+Separate these into explicit execution paths/functions.
+
+Do not alter BlackJAX behaviour unless necessary for this separation.
 
 ### MAINT-07 — CLI organisation
 
@@ -253,11 +261,9 @@ Consider compilation boundaries as well as steady-state execution performance.
 
 ### PERF-05 — MAP parallelism and scaling
 
-Investigate explicit parallelism for MAP/Adam optimisation.
+Investigate explicit parallelism for MAP/Adam optimisation. Consider adding sharding.
 
 The design should consider eventual workloads with approximately one million sites and potential GPU execution.
-
-Avoid introducing parallelism until the existing CPU/thread behaviour is understood.
 
 ---
 
@@ -424,9 +430,48 @@ CLI default assertions also now reflect the 3/1/10 defaults already selected in
 existing dependency deprecation warnings in 131.57 s. `python -m tombombadil
 --help` and `git diff --check` also succeeded.
 
+### 2026-09-30 — Per-step MAP reporting and result output
+
+**Context:** MAINT-03, MAINT-05, and MAINT-06 were combined into one
+implementation loop, with the user-requested renumbering of output logging to
+MAINT-04, omega plotting to MAINT-05, and MAP/NUTS path separation to MAINT-06.
+
+**Decision:** Record the objective at step 0 and after each optimizer update,
+while keeping convergence decisions at their configured check intervals and
+selecting the best replicate as before. Measure startup from the initial
+objective evaluation through the first update and report later optimization
+time separately; describe startup as including JAX compilation when it occurs.
+Use `jax.value_and_grad` to share intermediate objective and gradient
+evaluations, with a separate objective evaluation for the final state. Replace
+final result printing with logging and always write existing MAP/NUTS result
+formats using the `output` stem when no `--output-jax` stem is provided. Plot
+per-site omega linearly from zero, with the upper limit at least 1 so the
+omega=1 guide remains visible.
+
+**Rationale:** Per-step values support the requested progress display and plot.
+Sharing objective and gradient work limits the cost of this additional
+reporting. A default output stem ensures MAP and NUTS estimates are retained
+even when callers omit `--output-jax`.
+
+**Consequences:** Focused tests passed (8 tests). The full suite passed (56
+tests, 2 existing dependency deprecation warnings) in 171.30 s; the protected
+likelihood/gradient and MAP numerical references remain unchanged. CLI help
+and `git diff --check` passed. The warmed benchmark used `porB3_aligned.fasta`
+(23 samples, 294 sites), CPU with 4 workers, one per-site MAP replicate,
+500-step maximum, convergence patience 5, check every 10 steps, minimum 50,
+and invariant sites excluded. The benchmark timing starts at `_run_replicates`
+and includes progress reporting in the timed pass; it excludes alignment
+loading, transform setup, plots, and output writing. Warm and timed durations
+were 126.371255 s and 122.072659 s respectively for 210 steps, with final
+objective `-1071.4185160607`. The timed result is about 20% above the prior
+MAINT-02 timed result of 101.753761 s, while the warm result is about 28% above
+the prior warm result of 99.071470 s. These are single runs and do not
+establish a repeatable performance difference. No numerical references or
+tolerances were changed.
+
 # Blockers
 
-None currently recorded.
+None.
 
 For each blocker, record:
 
@@ -528,6 +573,34 @@ not begin until requested.
 **Blockers:** None.
 
 **Next:** MAINT-03 — Compilation logging; wait for the user to request it.
+
+## 2026-09-30 — MAINT-03/04/05 batched implementation
+
+**Task:** MAINT-03, MAINT-04, and MAINT-05 — Compilation logging, consistent
+output, and omega plot
+
+**Completed:**
+- Renumbered consistent output to MAINT-04, omega plotting to MAINT-05, and
+  MAP/NUTS path separation to MAINT-06.
+- Added per-step MAP likelihood history and reporting, compilation-inclusive
+  startup timing, consistent final-result logging, default MAP/NUTS output
+  files, and linear per-site omega plots.
+- Fused intermediate objective and gradient calculations after the first
+  per-step implementation increased the timed benchmark to 211.717 s.
+
+**Tests/benchmarks:**
+- Focused progress/output/plot tests: 8 passed.
+- `python -m pytest`: 56 passed, 2 existing dependency deprecation warnings,
+  171.30 s. Protected numerical references passed unchanged.
+- `python -m tombombadil --help` succeeded.
+- Final warmed benchmark: 126.371255 s warm and 122.072659 s timed, 210 steps,
+  objective `-1071.4185160607`; configuration and timing boundary are in
+  Design Notes.
+
+**Blockers:** None.
+
+**Next:** MAINT-06 — Separate MAP and NUTS execution paths; do not begin until
+requested.
 
 ---
 

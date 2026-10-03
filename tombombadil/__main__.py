@@ -94,9 +94,8 @@ def get_options():
                         help='Exclude invariant sites from the data likelihood. By default invariant '
                              'sites are included.')
     mGroup.add_argument('--output-jax', type=str, default=None, metavar='STEM',
-                        help='Save parameter/result files with the given stem. MAP optimisation always reports '
-                             'progress and saves a likelihood plot; without a stem, the plot is saved in the '
-                             'current directory.')
+                        help='Save parameter/result files with the given stem (default: output). MAP optimisation '
+                             'always saves a likelihood plot and per-site MAP also saves an omega plot.')
     mGroup.add_argument('--fit-method', choices=['map', 'nuts'], default='map',
                         help='Fit with MAP optimisation or BlackJAX NUTS sampling (default: map).')
     mGroup.add_argument('--objective-aggregate', choices=['mean', 'sum'], default='sum',
@@ -252,7 +251,6 @@ def estimate_pi_from_counts(X, pseudocount=0.5):
         raise ValueError(
             "Estimated pi must contain 61 finite, strictly positive non-stop codon frequencies"
         )
-    print("pi",pi)
     return pi
 
 def estimate_f3x4_frequencies_from_counts(X, pseudocount=0.5):
@@ -374,7 +372,7 @@ def main():
             omega_floor=options.diagnostic_enable_omega_floor,
             omega_mode=options.omega_mode,
         )
-        print(f"Diagnostic scalar-GTR objective: {value:.10f}")
+        logging.info("Diagnostic scalar-GTR objective: %.10f", value)
         return
 
     from .sample import run_sampler

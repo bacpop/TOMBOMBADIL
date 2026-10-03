@@ -156,19 +156,26 @@ On the CPU backend, `--cpus` sets the JAX worker count for both MAP and NUTS
 This configures JAX workers; process CPU use can exceed the selected count due
 to runtime helper threads and compilation work.
 
-Output files are prefixed by omega mode. With `--output-jax output`, scalar
+Output files are prefixed by omega mode. Without `--output-jax`, results use
+the stem `output`; supplying `--output-jax STEM` replaces that stem. Scalar
 MAP fitting writes `scalar_output_Allparams.csv`; per-site MAP fitting writes
-`per_site_output_GTRparams.csv` and `per_site_output_omega.csv`. NUTS files
-use the same `scalar_` or `per_site_` prefix.
+`per_site_output_GTRparams.csv` and `per_site_output_omega.csv`, plus
+`per_site_output_omega_plot.pdf`. NUTS writes posterior samples and summaries
+with the same `scalar_` or `per_site_` prefix. MAP final estimates and NUTS
+summaries are logged, and parameter estimates are saved in these CSV files.
 
-MAP optimisation reports iteration progress by default, with the current
-log-likelihood updated at checkpoints. In a terminal this appears as a progress
-bar for each replicate; when output is redirected, the checkpoints are written
-to the log. Every MAP run also saves a likelihood-versus-iteration PDF with the
-best replicate highlighted. Without `--output-jax`, the plot is saved in the
+MAP optimisation reports the log-likelihood after every optimizer step. In a
+terminal this appears in the progress bar for each replicate; when output is
+redirected, each value is written to the log. The initial objective evaluation
+and first optimizer update are timed as startup, including JAX compilation when
+needed; the remaining optimization time is reported separately. Every MAP run
+also saves a likelihood-versus-iteration PDF with the best replicate
+highlighted. Without `--output-jax`, the plot is saved in the
 current directory as `scalar_likelihood_plot.pdf` or
 `per_site_likelihood_plot.pdf`. With an output stem, it is saved alongside the
-other results, for example `per_site_output_likelihood_plot.pdf`.
+other results, for example `per_site_fit_likelihood_plot.pdf`. The per-site
+omega plot uses a linear y-axis starting at zero and keeps the omega=1 guide
+visible.
 
 # More options
 --convergence-tol x default=1e-6

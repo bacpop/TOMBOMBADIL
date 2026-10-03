@@ -4,6 +4,7 @@ import csv as _csv
 import logging
 import os
 import sys
+from time import perf_counter
 import numpy as np
 import jax
 import jax.numpy as jnp
@@ -361,6 +362,7 @@ def _optimize_params(fn, params, solver, n_iter, verbose=True, convergence=None,
                      progress_callback=None):
     """Run the optimization loop and return final params plus convergence metadata."""
     loss_fn = lambda p: -fn(p)
+    loss_and_grad = jax.value_and_grad(loss_fn)
     opt_state = solver.init(params)
     use_convergence = convergence is not None and convergence.get("enabled", False)
     check_every = max(int(convergence.get("check_every", 1)), 1) if use_convergence else 1
@@ -369,11 +371,18 @@ def _optimize_params(fn, params, solver, n_iter, verbose=True, convergence=None,
     tol = float(convergence.get("tol", 0.0)) if use_convergence else 0.0
 
     best_params = params
-    initial_objective = float(fn(params))
+    optimization_started = perf_counter()
+    if n_iter:
+        initial_loss, grad = loss_and_grad(params)
+    else:
+        initial_loss = loss_fn(params)
+        grad = None
+    initial_objective = -float(initial_loss)
     best_objective = initial_objective if use_convergence else None
     objective_history = [(0, initial_objective)]
     last_objective = initial_objective
-    last_evaluation_step = 0
+    startup_seconds = None
+    steady_state_started = None
     if progress_callback is not None:
         progress_callback(0, n_iter, initial_objective)
     stale_checks = 0
@@ -381,23 +390,33 @@ def _optimize_params(fn, params, solver, n_iter, verbose=True, convergence=None,
     steps_run = 0
 
     for step in range(1, n_iter + 1):
-        grad = jax.grad(loss_fn)(params)
         updates, opt_state = solver.update(grad, opt_state, params)
         params = optax.apply_updates(params, updates)
         steps_run = step
         if verbose:
-            print('parameters: ', jax.tree.map(positive, jnp.array([
+            logging.debug('parameters: %s', jax.tree.map(positive, jnp.array([
                 params["alpha"], params["beta"], params["gamma"],
                 params["delta"], params["epsilon"], params["theta"]
             ])))
-            print('omegas: ', jax.tree.map(positive, params["omega"]))
+            logging.debug('omegas: %s', jax.tree.map(positive, params["omega"]))
 
-        current_objective = None
+        if step < n_iter:
+            current_loss, next_grad = loss_and_grad(params)
+        else:
+            current_loss = loss_fn(params)
+            next_grad = None
+        current_objective = -float(current_loss)
+        objective_history.append((step, current_objective))
+        last_objective = current_objective
+
+        if step == 1:
+            startup_seconds = perf_counter() - optimization_started
+            steady_state_started = perf_counter()
+
+        if progress_callback is not None:
+            progress_callback(step, n_iter, current_objective)
+
         if use_convergence and step % check_every == 0:
-            current_objective = float(fn(params))
-            objective_history.append((step, current_objective))
-            last_objective = current_objective
-            last_evaluation_step = step
             improvement = current_objective - best_objective
             if current_objective > best_objective:
                 best_objective = current_objective
@@ -411,20 +430,27 @@ def _optimize_params(fn, params, solver, n_iter, verbose=True, convergence=None,
                 if stale_checks >= patience:
                     converged = True
                     break
-        elif not use_convergence and step % 10 == 0:
-            current_objective = float(fn(params))
-            objective_history.append((step, current_objective))
-            last_objective = current_objective
-            last_evaluation_step = step
+        if next_grad is not None:
+            grad = next_grad
 
-        if progress_callback is not None and (step < n_iter or current_objective is not None):
-            progress_callback(step, n_iter, current_objective)
-
-    if steps_run != last_evaluation_step:
-        last_objective = float(fn(params))
-        objective_history.append((steps_run, last_objective))
-        if progress_callback is not None:
-            progress_callback(steps_run, n_iter, last_objective)
+    if startup_seconds is None:
+        startup_seconds = perf_counter() - optimization_started
+        logging.info(
+            "MAP startup (initial objective; includes JAX compilation on a cache miss): %.3f seconds",
+            startup_seconds,
+        )
+        steady_state_seconds = 0.0
+    else:
+        steady_state_seconds = perf_counter() - steady_state_started
+        logging.info(
+            "MAP startup (initial objective and first update; includes JAX compilation on a cache miss): %.3f seconds",
+            startup_seconds,
+        )
+    logging.info(
+        "MAP optimization after startup: %.3f seconds across %d step(s)",
+        steady_state_seconds,
+        max(steps_run - 1, 0),
+    )
 
     if not use_convergence:
         best_params = params
@@ -488,25 +514,23 @@ def compute_laplace_se(fn, params):
     return se_raw, se_natural
 
 
-def _print_laplace_summary(params, se_natural, omega_mode="scalar"):
-    """Print a human-readable summary of MAP estimates ± 1 SE (natural scale)."""
+def _log_laplace_summary(params, se_natural, omega_mode="scalar"):
+    """Log a human-readable summary of MAP estimates ± 1 SE (natural scale)."""
     validate_omega_mode(omega_mode)
     gtr_keys = GTR_PARAM_KEYS_WITH_ETA
-    print("\n--- Laplace approximation (diagonal) ---")
-    print("Scalar parameters (natural scale):")
+    logging.info("Laplace approximation (diagonal), estimates on natural scale:")
     for k in gtr_keys:
         if k in params:
             est = float(positive(params[k]))
             se  = float(se_natural[k])
-            print(f"  {k:8s}: {est:.4f} ± {se:.4f}")
+            logging.info("  %-8s: %.4f +/- %.4f", k, est, se)
     if "omega" in params:
         omega = np.asarray(positive(params["omega"]))
         se = np.asarray(se_natural["omega"])
         if omega_mode == "scalar":
-            print(f"  {'omega':8s}: {float(omega):.4f} ± {float(se):.4f}")
+            logging.info("  %-8s: %.4f +/- %.4f", "omega", float(omega), float(se))
         else:
-            print(f"  {'omega':8s}: {len(omega)} site-wise standard errors")
-    print("----------------------------------------\n")
+            logging.info("  omega: %d site-wise standard errors", len(omega))
 
 
 def save_params(output_stem: str, params: dict, mask: np.ndarray = None,
@@ -678,25 +702,23 @@ def save_posterior_outputs(output_stem, raw_samples, summaries, omega_mode="scal
     logging.info("Saved posterior summary to: %s", summary_path)
 
 
-def _print_posterior_summary(summaries, diagnostics):
-    print("\n--- BlackJAX NUTS posterior summary (natural scale) ---")
+def _log_posterior_summary(summaries, diagnostics):
+    logging.info("BlackJAX NUTS posterior summary (natural scale):")
     for k in SCALAR_PARAM_KEYS_WITH_ETA:
         if k not in summaries:
             continue
         s = summaries[k]
         if np.ndim(s["mean"]) != 0:
-            print(f"  {k:8s}: {len(np.asarray(s['mean']))} site-wise posterior summaries")
+            logging.info("  %-8s: %d site-wise posterior summaries", k, len(np.asarray(s["mean"])))
             continue
-        print(
-            f"  {k:8s}: mean={s['mean']:.4f}, median={s['median']:.4f}, "
-            f"95% CI=({s['q2.5']:.4f}, {s['q97.5']:.4f}), "
-            f"ESS={s['ess']:.1f}, R-hat={s['rhat']:.4f}"
+        logging.info(
+            "  %-8s: mean=%.4f, median=%.4f, 95%% CI=(%.4f, %.4f), ESS=%.1f, R-hat=%.4f",
+            k, s["mean"], s["median"], s["q2.5"], s["q97.5"], s["ess"], s["rhat"],
         )
-    print(
-        f"Diagnostics: mean acceptance={diagnostics['mean_acceptance_rate']:.4f}, "
-        f"divergences={diagnostics['n_divergent']}"
+    logging.info(
+        "Diagnostics: mean acceptance=%.4f, divergences=%d",
+        diagnostics["mean_acceptance_rate"], diagnostics["n_divergent"],
     )
-    print("------------------------------------------------------\n")
 
 
 def run_nuts_sampler(fn, start_params, num_warmup=1000, num_samples=1000,
@@ -755,7 +777,7 @@ def run_nuts_sampler(fn, start_params, num_warmup=1000, num_samples=1000,
         raw_samples, infos, omega_mode=omega_mode
     )
     if print_summary:
-        _print_posterior_summary(summaries, diagnostics)
+        _log_posterior_summary(summaries, diagnostics)
     if output is not None:
         save_posterior_outputs(output, raw_samples, summaries, omega_mode=omega_mode)
 
@@ -936,7 +958,10 @@ def plot_per_site_omega(params, mask=None, domain_labels=None):
         colours = np.where(labels == "other", "steelblue", colours)
     ax.scatter(sites, omega, c=colours, s=15, alpha=0.75)
     ax.axhline(1.0, color="black", linestyle="--", linewidth=1)
-    ax.set_yscale("log")
+    ax.set_ylim(0, max(float(np.max(omega)), 1.0))
+    y_formatter = plt.ScalarFormatter(useOffset=False)
+    y_formatter.set_scientific(False)
+    ax.yaxis.set_major_formatter(y_formatter)
     ax.set_xlabel("Alignment codon site")
     ax.set_ylabel("omega")
     ax.set_title("Per-site omega estimates")
@@ -1028,7 +1053,7 @@ def run_sampler(X, pi_eq, samples=500, platform='cpu', threads=8,
     #X = X[:,mask2] # this could be an alternative, where I filter X by positions that show diversity
     #print("X",X)
     #log_pi, pimat, pimatinv, pimult = transforms(X, pi_eq)
-    logging.info("Compiling model...")
+    logging.info("Preparing model; JAX compilation occurs on the first evaluation as needed.")
 
     base_params = make_base_params(
         n_sites=X.shape[1], estimate_eta=estimate_eta, omega_mode=omega_mode
@@ -1044,6 +1069,7 @@ def run_sampler(X, pi_eq, samples=500, platform='cpu', threads=8,
         omega_floor=omega_floor,
         omega_mode=omega_mode,
     )
+    result_stem = output if output is not None else "output"
 
     if fit_method == "nuts":
         logging.info(
@@ -1058,7 +1084,7 @@ def run_sampler(X, pi_eq, samples=500, platform='cpu', threads=8,
             num_chains=num_chains,
             rng_seed=rng_seed,
             target_acceptance_rate=target_acceptance_rate,
-            output=output,
+            output=result_stem,
             chain_mode=nuts_chain_mode,
             omega_mode=omega_mode,
         )
@@ -1080,17 +1106,7 @@ def run_sampler(X, pi_eq, samples=500, platform='cpu', threads=8,
     params = all_params[best_idx]
     best_metadata = all_metadata[best_idx]
 
-    loss_fn = lambda p: -fn(p)
-    print('Final likelihood: ', fn(params))
-    print('final parameters: ', jax.tree.map(positive, jnp.array([
-        params["alpha"], params["beta"], params["gamma"],
-        params["delta"], params["epsilon"], params["theta"]
-        ])))
-    print('dN/dS is estimated to be: ', jax.tree.map(positive, params["omega"]))
     status = "converged" if best_metadata["converged"] else "reached max steps"
-    print(f"Optimization status: {status} after {best_metadata['n_steps']} step(s)")
-    #print('Objective function: ', loss_fn(params))
-
     likelihood_fig, _ = plot_likelihood_history(all_metadata, best_idx)
     likelihood_path = likelihood_plot_path(output, omega_mode)
     likelihood_fig.savefig(likelihood_path, format="pdf", bbox_inches="tight")
@@ -1102,20 +1118,37 @@ def run_sampler(X, pi_eq, samples=500, platform='cpu', threads=8,
         plt.show()
     if omega_mode == "per-site":
         fig, _ = plot_per_site_omega(params, mask=mask, domain_labels=domain_labels)
-        if output is not None:
-            fig.savefig(mode_output_stem(output, omega_mode) + "_omega_plot.pdf",
-                        format="pdf", bbox_inches="tight")
+        omega_plot_path = mode_output_stem(result_stem, omega_mode) + "_omega_plot.pdf"
+        fig.savefig(omega_plot_path, format="pdf", bbox_inches="tight")
+        logging.info("Saved MAP per-site omega plot to: %s", omega_plot_path)
         plt.close(fig)
     if estimate_uncertainty:
         logging.info("Computing Laplace uncertainty...")
         _, se_nat = compute_laplace_se(fn, params)
-        _print_laplace_summary(params, se_nat, omega_mode=omega_mode)
+        _log_laplace_summary(params, se_nat, omega_mode=omega_mode)
 
-    if output is not None:
-        save_params(output, params, mask=mask, omega_mode=omega_mode)
+    save_params(result_stem, params, mask=mask, omega_mode=omega_mode)
+    logging.info("Final log-likelihood: %.10f", best_metadata["objective"])
+    scalar_estimates = {
+        key: float(positive(params[key]))
+        for key in GTR_PARAM_KEYS_WITH_ETA
+        if key in params
+    }
+    logging.info("Final scalar parameter estimates (natural scale): %s", scalar_estimates)
+    omega_estimates = np.asarray(positive(params["omega"]))
+    if omega_mode == "scalar":
+        logging.info("Final dN/dS estimate: %.10g", float(omega_estimates))
+    else:
+        logging.info(
+            "Final dN/dS estimates cover %d sites (range %.6g to %.6g); saved to: %s",
+            len(omega_estimates), float(omega_estimates.min()),
+            float(omega_estimates.max()),
+            mode_output_stem(result_stem, omega_mode) + "_omega.csv",
+        )
+    logging.info("Optimization status: %s after %d step(s)", status, best_metadata["n_steps"])
 
     return {
         "params": params,
-        "objective": float(fn(params)),
+        "objective": float(best_metadata["objective"]),
         "metadata": best_metadata,
     }
