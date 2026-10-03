@@ -375,7 +375,7 @@ def main():
         logging.info("Diagnostic scalar-GTR objective: %.10f", value)
         return
 
-    from .sample import run_sampler
+    from .sample import _prepare_model, run_map_optimizer, run_nuts_sampler
 
     domain_labels = None
     if options.domains is not None:
@@ -387,28 +387,52 @@ def main():
         domain_labels = parse_domain_labels(options.domains, options.alignment,
                                             options.reference, X.shape[1])
 
-    run_sampler(X, pi, options.sample_it, options.platform, options.cpus,
-                estimate_uncertainty=options.estimate_uncertainty,
-                fit_replicates=options.fit_replicates,
-                include_invariant=not options.exclude_invariant,
-                output=options.output_jax,
-                aggregate=options.objective_aggregate,
-                prior_mode=options.prior_mode,
-                estimate_eta=not options.fix_eta,
-                fit_until_convergence=options.fit_until_convergence,
-                convergence_tol=options.convergence_tol,
-                convergence_patience=options.convergence_patience,
-                convergence_check_every=options.convergence_check_every,
-                convergence_min_steps=options.convergence_min_steps,
-                fit_method=options.fit_method,
-                num_warmup=options.num_warmup,
-                num_samples=options.num_samples,
-                num_chains=options.num_chains,
-                rng_seed=options.rng_seed,
-                target_acceptance_rate=options.target_acceptance_rate,
-                nuts_chain_mode=options.nuts_chain_mode,
-                omega_mode=options.omega_mode,
-                domain_labels=domain_labels)
+    fn, start_params, mask = _prepare_model(
+        X, pi,
+        include_invariant=not options.exclude_invariant,
+        aggregate=options.objective_aggregate,
+        prior_mode=options.prior_mode,
+        estimate_eta=not options.fix_eta,
+        eigen_jitter=True,
+        omega_floor=True,
+        omega_mode=options.omega_mode,
+    )
+
+    if options.fit_method == "map":
+        run_map_optimizer(
+            fn, start_params, mask,
+            samples=options.sample_it,
+            estimate_uncertainty=options.estimate_uncertainty,
+            fit_replicates=options.fit_replicates,
+            output=options.output_jax,
+            fit_until_convergence=options.fit_until_convergence,
+            convergence_tol=options.convergence_tol,
+            convergence_patience=options.convergence_patience,
+            convergence_check_every=options.convergence_check_every,
+            convergence_min_steps=options.convergence_min_steps,
+            omega_mode=options.omega_mode,
+            domain_labels=domain_labels,
+        )
+    elif options.fit_method == "nuts":
+        logging.info(
+            "Running BlackJAX NUTS — %s chain(s), %s warmup step(s), %s draw(s)",
+            options.num_chains, options.num_warmup, options.num_samples,
+        )
+        result_stem = options.output_jax if options.output_jax is not None else "output"
+        run_nuts_sampler(
+            fn,
+            start_params,
+            num_warmup=options.num_warmup,
+            num_samples=options.num_samples,
+            num_chains=options.num_chains,
+            rng_seed=options.rng_seed,
+            target_acceptance_rate=options.target_acceptance_rate,
+            output=result_stem,
+            chain_mode=options.nuts_chain_mode,
+            omega_mode=options.omega_mode,
+        )
+    else:
+        raise ValueError(f"Unsupported fit method: {options.fit_method!r}")
 
 if __name__ == "__main__":
     main()

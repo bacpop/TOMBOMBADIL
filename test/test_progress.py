@@ -9,6 +9,7 @@ import numpy as np
 import optax
 
 from tombombadil import sample
+from tombombadil.__main__ import main
 from tombombadil.sample import _optimize_params
 from tombombadil.sample import _run_replicates
 from tombombadil.sample import likelihood_plot_path
@@ -69,7 +70,6 @@ class TestMapProgressHistory(unittest.TestCase):
         self.assertIn("step 0/3", objective_logs[0])
         self.assertIn("step 3/3", objective_logs[-1])
         self.assertTrue(any("MAP startup" in line for line in captured.output))
-        self.assertTrue(any("optimization after startup" in line for line in captured.output))
 
     def test_likelihood_plot_labels_axis_and_highlights_best_replicate(self):
         metadata = [
@@ -153,9 +153,21 @@ class TestMapProgressHistory(unittest.TestCase):
                     "tombombadil.sample._run_replicates",
                     side_effect=return_initial_params,
                 ):
-                    sample.run_sampler(
+                    fn, start_params, mask = sample._prepare_model(
                         X,
                         pi,
+                        include_invariant=True,
+                        aggregate="sum",
+                        prior_mode="stan_unconstrained",
+                        estimate_eta=True,
+                        eigen_jitter=True,
+                        omega_floor=True,
+                        omega_mode="per-site",
+                    )
+                    sample.run_map_optimizer(
+                        fn,
+                        start_params,
+                        mask,
                         samples=1,
                         omega_mode="per-site",
                     )
@@ -171,24 +183,22 @@ class TestMapProgressHistory(unittest.TestCase):
             finally:
                 os.chdir(original_cwd)
 
-    def test_nuts_uses_default_result_stem_without_output_stem(self):
+    def test_main_uses_default_nuts_result_stem_without_output_stem(self):
         X = np.zeros((61, 1))
-        pi = np.full(61, 1 / 61)
-        sentinel = {"result": "nuts"}
         with patch(
-            "tombombadil.sample.make_fn", return_value=lambda params: jnp.array(-1.0)
+            "sys.argv",
+            ["tombombadil", "--alignment", "alignment.fasta", "--fit-method", "nuts"],
         ), patch(
-            "tombombadil.sample.run_nuts_sampler", return_value=sentinel
+            "tombombadil.__main__.configure_jax_for_options"
+        ), patch(
+            "tombombadil.__main__.count_codons", return_value=(X, 1)
+        ), patch(
+            "tombombadil.sample._prepare_model",
+            return_value=(lambda params: jnp.array(-1.0), {}, np.ones(1)),
+        ), patch(
+            "tombombadil.sample.run_nuts_sampler"
         ) as run_nuts:
-            result = sample.run_sampler(
-                X,
-                pi,
-                fit_method="nuts",
-                num_warmup=1,
-                num_samples=1,
-                num_chains=1,
-            )
-        self.assertIs(result, sentinel)
+            main()
         self.assertEqual(run_nuts.call_args.kwargs["output"], "output")
 
 

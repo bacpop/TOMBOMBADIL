@@ -969,18 +969,9 @@ def plot_per_site_omega(params, mask=None, domain_labels=None):
     return fig, ax
 
 
-def run_sampler(X, pi_eq, samples=500, platform='cpu', threads=8,
-                estimate_uncertainty=False, fit_replicates=1,
-                include_invariant=True, output=None, aggregate="sum",
-                prior_mode="stan_unconstrained", estimate_eta=True,
-                eigen_jitter=True, omega_floor=True,
-                fit_until_convergence=False, convergence_tol=1e-6,
-                convergence_patience=5, convergence_check_every=10,
-                convergence_min_steps=50, fit_method="map",
-                num_warmup=1000, num_samples=1000, num_chains=4,
-                rng_seed=0, target_acceptance_rate=0.8,
-                nuts_chain_mode="sequential", omega_mode="scalar",
-                domain_labels=None):
+def _prepare_model(X, pi_eq, include_invariant, aggregate, prior_mode,
+                   estimate_eta, eigen_jitter, omega_floor, omega_mode):
+    """Build the objective, initial parameters, and site mask shared by fitters."""
     validate_omega_mode(omega_mode)
     logging.info("Precomputing transforms...")
     #col = 30 # site in the alignment
@@ -1058,7 +1049,6 @@ def run_sampler(X, pi_eq, samples=500, platform='cpu', threads=8,
     base_params = make_base_params(
         n_sites=X.shape[1], estimate_eta=estimate_eta, omega_mode=omega_mode
     )
-    base_labels = make_param_labels(base_params)
     fn = make_fn(
         pi_eq, log_pi, pimat, pimatinv, pimult, X, mask,
         include_invariant=include_invariant,
@@ -1069,26 +1059,18 @@ def run_sampler(X, pi_eq, samples=500, platform='cpu', threads=8,
         omega_floor=omega_floor,
         omega_mode=omega_mode,
     )
+    return fn, base_params, mask
+
+
+def run_map_optimizer(fn, start_params, mask, samples=500,
+                      estimate_uncertainty=False, fit_replicates=1,
+                      output=None, fit_until_convergence=False,
+                      convergence_tol=1e-6, convergence_patience=5,
+                      convergence_check_every=10, convergence_min_steps=50,
+                      omega_mode="scalar", domain_labels=None):
+    """Run MAP optimization and write its result files and diagnostics."""
+    base_labels = make_param_labels(start_params)
     result_stem = output if output is not None else "output"
-
-    if fit_method == "nuts":
-        logging.info(
-            "Running BlackJAX NUTS — %s chain(s), %s warmup step(s), %s draw(s)",
-            num_chains, num_warmup, num_samples,
-        )
-        return run_nuts_sampler(
-            fn,
-            base_params,
-            num_warmup=num_warmup,
-            num_samples=num_samples,
-            num_chains=num_chains,
-            rng_seed=rng_seed,
-            target_acceptance_rate=target_acceptance_rate,
-            output=result_stem,
-            chain_mode=nuts_chain_mode,
-            omega_mode=omega_mode,
-        )
-
     logging.info(f"Running optimization — {fit_replicates} replicate(s)...")
     convergence = None
     if fit_until_convergence:
@@ -1100,7 +1082,7 @@ def run_sampler(X, pi_eq, samples=500, platform='cpu', threads=8,
             "min_steps": convergence_min_steps,
         }
     all_params, best_idx, all_metadata = _run_replicates(
-        fn, base_params, base_labels, fit_replicates, n_iter=samples,
+        fn, start_params, base_labels, fit_replicates, n_iter=samples,
         convergence=convergence,
     )
     params = all_params[best_idx]

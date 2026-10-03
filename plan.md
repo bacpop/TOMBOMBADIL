@@ -15,28 +15,26 @@ The MAINT-03, MAINT-04, and MAINT-05 batch is complete. MAP objective values
 are reported at every step, compilation-inclusive startup time is separated
 from later optimization time, result output uses logging and default files,
 and the per-site omega plot uses a linear scale. Numerical references pass.
+MAINT-06 is complete. Shared model preparation and MAP execution have dedicated
+functions; `main()` prepares the model and dispatches directly to MAP or NUTS.
 
 # Current Task
 
-## MAINT-03, MAINT-04, and MAINT-05 — Compilation logging, consistent output, and omega plot
+## MAINT-06 — Separate MAP and NUTS execution paths
 
-Complete the original MAINT-03, MAINT-05, and MAINT-06 together. At the start
-of this batch, renumber the backlog so consistent output becomes MAINT-04,
-omega plotting becomes MAINT-05, and the existing MAP/NUTS path separation
-task becomes MAINT-06.
+Call `_prepare_model()` from `main()`, then dispatch there to distinct MAP and
+NUTS execution paths. Remove the redundant `run_sampler()` wrapper and update
+existing test call sites. Preserve MAP and NUTS behavior, output conventions,
+and the `_run_replicates` benchmark timing boundary.
 
 ### Checklist
 
-- [x] Renumber MAINT-05 to MAINT-04, MAINT-06 to MAINT-05, and the existing MAINT-04 to MAINT-06.
-- [x] Report and record MAP objective values at step 0 and after every optimizer update in the progress display, logs, and likelihood plot; preserve configured convergence checks and best-replicate selection.
-- [x] Log a compilation-inclusive startup duration covering the initial objective evaluation and first optimizer update, separately from the remaining optimization duration.
-- [x] Replace final-result prints with logging for MAP, NUTS, Laplace summaries, and fixed-parameter diagnostics.
-- [x] Always write MAP estimate and NUTS posterior CSVs. Without `--output-jax`, use the `output` stem and existing mode-prefixed filename conventions; preserve current CSV schemas.
-- [x] Plot per-site omega on a linear axis from zero, use plain numeric y ticks where practical, and keep the omega=1 guide visible (the upper limit may therefore be 1 when the observed maximum is lower).
-- [x] Save the per-site omega plot with a default mode-prefixed filename when no output stem is supplied; document default result files.
-- [x] Add or update focused tests for every-step objective history/reporting, logging, default and explicit output paths, and omega plot scale and tick formatting.
-- [x] Run the full test suite and help check; preserve protected numerical references and tolerances.
-- [x] Record a warmed MAP benchmark with the existing timing boundary.
+- [x] Extract shared transform, mask, parameter, and model-function setup into a preparation helper.
+- [x] Extract the MAP optimization, result selection, plotting, uncertainty, and output logic into a dedicated function.
+- [x] Call `_prepare_model()` from `main()` and move its `if map / elif nuts` dispatch there.
+- [x] Remove `run_sampler()` and update all existing test call sites to the appropriate preparation, MAP, NUTS, or CLI entry point.
+- [x] Preserve output filename conventions, sampler behavior, and `_run_replicates` signature/location/timing boundary.
+- [x] Run the existing full test suite, CLI help check, and `git diff --check`; preserve protected numerical references and tolerances.
 - [x] Update Current Status, Design Notes, Session Log, blockers, and Next Task.
 
 ### Guardrails
@@ -54,7 +52,7 @@ Performance comparisons must use comparable inputs, configuration, hardware, and
 
 # Next Task
 
-Continue with MAINT-06 — Separate MAP and NUTS execution paths. Do not begin it automatically.
+After MAINT-06 is complete, continue with MAINT-07 — CLI organisation. Do not begin it automatically.
 
 ---
 
@@ -197,9 +195,9 @@ Clearly separate options specific to:
 - MAP / Optax
 - NUTS / BlackJAX
 
-Replace or deprecate `--sample-it` for MAP mode with terminology appropriate to optimisation iterations.
+For MAP mode, change `--sample-it` to `--max-it`.
 
-Consider making early convergence the default for MAP optimisation.
+Make early convergence the default for MAP optimisation.
 
 Setting defaults both in the CLI parser, and in function arguments is
 confusing. Remove defaults in functions where these are set at input.
@@ -469,6 +467,34 @@ the prior warm result of 99.071470 s. These are single runs and do not
 establish a repeatable performance difference. No numerical references or
 tolerances were changed.
 
+### 2026-10-03 — Separate MAP and NUTS execution paths
+
+**Context:** MAINT-06 asked to clarify the MAP/NUTS control flow without
+changing BlackJAX sampling behavior or the MAP benchmark boundary. The wrapper
+based dispatch was subsequently removed at the user's direction because the
+CLI is the only production caller.
+
+**Decision:** Extract shared transforms, mask creation, initial parameters, and
+objective construction into `_prepare_model`. Keep MAP execution, result
+selection, plots, uncertainty, and output in `run_map_optimizer`. Have
+`main()` call `_prepare_model()` and dispatch directly to `run_map_optimizer`
+or the unchanged `run_nuts_sampler`; remove `run_sampler()`. Preserve output
+naming and the location and signature of `_run_replicates`. Clarify the
+post-startup timing log label without changing its calculation.
+
+**Rationale:** The CLI is the sole production entry point, so a general wrapper
+with a duplicate call signature adds no value. Preparation is common to both
+fitters, while their execution and outputs differ. The timing label describes
+the already separate post-startup duration.
+
+**Consequences:** Updated the existing MAP output test to call preparation and
+MAP execution directly, and updated the NUTS default-stem test to exercise
+`main()`. The full suite passed (56 tests, 2 dependency deprecation warnings)
+in 187.61 s; protected numerical references remained unchanged. CLI help and
+`git diff --check` passed. No new dispatch test was added and no performance
+benchmark was needed because optimizer execution and the `_run_replicates`
+timing boundary are unchanged.
+
 # Blockers
 
 None.
@@ -601,6 +627,30 @@ output, and omega plot
 
 **Next:** MAINT-06 — Separate MAP and NUTS execution paths; do not begin until
 requested.
+
+## 2026-10-03 — MAINT-06 MAP/NUTS execution separation
+
+**Task:** MAINT-06 — Separate MAP and NUTS execution paths
+
+**Completed:**
+- Extracted shared model preparation into `_prepare_model` and MAP execution,
+  result handling, plotting, uncertainty, and outputs into `run_map_optimizer`.
+- Moved model preparation and the MAP/NUTS branch into `main()` and removed
+  the redundant `run_sampler()` wrapper. Preserved default filenames, NUTS
+  sampling, and the `_run_replicates` timing boundary.
+- Clarified the existing post-startup optimization timing log label; timing
+  behavior is unchanged.
+
+**Tests:**
+- `python -m pytest`: 56 passed, 2 existing dependency deprecation warnings,
+  187.61 s. Protected likelihood/gradient and MAP references passed unchanged.
+- `python -m tombombadil --help` succeeded; `git diff --check` passed.
+- Existing test callers now use the direct MAP functions or `main()`; no new
+  dispatch test was added.
+
+**Blockers:** None.
+
+**Next:** MAINT-07 — CLI organisation; do not begin until requested.
 
 ---
 
