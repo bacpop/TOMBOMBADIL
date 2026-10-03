@@ -436,18 +436,18 @@ def _optimize_params(fn, params, solver, n_iter, verbose=True, convergence=None,
     if startup_seconds is None:
         startup_seconds = perf_counter() - optimization_started
         logging.info(
-            "MAP startup (initial objective; includes JAX compilation on a cache miss): %.3f seconds",
+            "MAP startup: %.3f seconds",
             startup_seconds,
         )
         steady_state_seconds = 0.0
     else:
         steady_state_seconds = perf_counter() - steady_state_started
         logging.info(
-            "MAP startup (initial objective and first update; includes JAX compilation on a cache miss): %.3f seconds",
+            "MAP startup: %.3f seconds",
             startup_seconds,
         )
     logging.info(
-        "MAP optimization after startup: %.3f seconds across %d step(s)",
+        "MAP optimization: %.3f seconds across %d step(s)",
         steady_state_seconds,
         max(steps_run - 1, 0),
     )
@@ -1053,7 +1053,7 @@ def run_sampler(X, pi_eq, samples=500, platform='cpu', threads=8,
     #X = X[:,mask2] # this could be an alternative, where I filter X by positions that show diversity
     #print("X",X)
     #log_pi, pimat, pimatinv, pimult = transforms(X, pi_eq)
-    logging.info("Preparing model; JAX compilation occurs on the first evaluation as needed.")
+    logging.info("Compiling model..Compiling.")
 
     base_params = make_base_params(
         n_sites=X.shape[1], estimate_eta=estimate_eta, omega_mode=omega_mode
