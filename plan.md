@@ -6,8 +6,17 @@ Do not begin a backlog item merely because it appears in this file. Work only on
 
 # Current Status
 
-**Phase:** Maintainable MAP optimisation
-**Status:** Complete
+**Phase:** GTR optimisation
+**Status:** Complete — PERF-01
+
+PERF-01 is complete. GTR construction now uses a compact static rate lookup,
+masked omega/diagonal updates, and broadcast frequency scaling. The selected
+implementation reduced median compilation-inclusive MAP startup by 12.83%,
+with median warm MAP runtime 2.30% higher (within the agreed 5% limit). No
+sustained-throughput or memory improvement is claimed. All protected references
+remain unchanged. Benchmark commands, alternatives, raw measurements, and
+limitations are in `test/perf01_results.md` and
+`test/benchmarks/perf01_results.json`. PERF-02 remains queued and unstarted.
 
 MAINT-01 and MAINT-02 are complete. The CPU worker count now configures MAP and
 NUTS on the CPU backend; the full test suite and numerical references pass.
@@ -28,23 +37,23 @@ remain unchanged.
 
 # Current Task
 
-## MAINT-08/09/10 — Alignment I/O, function names, and JAXopt warning
+## PERF-01 — GTR operations
 
-Move FASTA parsing, codon counting, and frequency estimation out of `__main__`
-into a focused alignment module, and share the parser with domain labeling.
-Rename the reviewed likelihood, optimizer, transform, mask, and parameter
-transformation helpers without changing numerical behavior. Record the
-pytest JAXopt warning as an upstream BlackJAX import/dependency issue; make no
-environment, dependency, or warning-filter changes.
+Benchmark alternatives for GTR diagonal replacement, omega updates, frequency
+scaling, and rate assembly. Retain only measured improvements while preserving
+likelihood/gradient and pinned MAP references. Use CPU with four workers, kernel
+and objective/gradient screening, a 10x site-count probe, and repeated full MAP
+comparisons. PERF-02 and subsequent tasks are not part of this implementation.
 
 ### Checklist
 
-- [x] Extract shared FASTA reading, codon counting, and frequency estimation into `tombombadil/alignment.py`; update CLI, domain plotting, and analysis callers.
-- [x] Apply approved naming changes throughout implementation, tests, benchmarks, and docs while retaining signatures and calculations.
-- [x] Add focused coverage for multi-record/wrapped FASTA, gzip input, codon counting, and domain parsing behavior.
-- [x] Run relevant tests, protected likelihood/gradient and pinned MAP references, the full suite, CLI help, and `git diff --check`.
-- [x] Record the JAXopt warning's upstream source and environment version mismatch; make no project dependency or warning suppression changes.
-- [x] Update Current Status, Design Notes, Session Log, blockers, and Next Task.
+- [x] Capture the baseline and add reproducible benchmark variants and metadata.
+- [x] Verify static substitution mappings and add GTR value/derivative coverage.
+- [x] Screen individual approaches and combinations, including 2,940-site probes.
+- [x] Compare baseline and finalists in repeated fresh-process MAP runs.
+- [x] Select production changes using measured runtime and startup results.
+- [x] Run protected numerical tests, the full suite, CLI help, and diff checks.
+- [x] Record measurements, decisions, blockers, Session Log, and Next Task.
 
 ### Guardrails
 
@@ -61,7 +70,7 @@ Performance comparisons must use comparable inputs, configuration, hardware, and
 
 # Next Task
 
-After MAINT-08/09/10, continue with PERF-01 — GTR operations; do not start it automatically.
+After PERF-01, continue with PERF-02 — `_gen_alpha_impl`; do not start it automatically.
 
 ---
 
@@ -566,6 +575,63 @@ the JAXopt warning and a `fastcore` asyncio deprecation warning. CLI help and
 `git diff --check` passed. No performance benchmark was needed because MAP
 execution and its timing boundary did not change.
 
+### 2026-10-04 — PERF-01 benchmark boundaries and numerical screening
+
+**Context:** GTR candidates can have substantially different kernel timings while
+whole-model execution is dominated by other operations. The optimizer currently
+uses `jax.value_and_grad(fn)` with existing inner JIT boundaries.
+
+**Decision:** Preserve the original GTR source at revision
+`d22f582c9ecf1c438254824e6c6f227db98b231d` as the benchmark baseline, loaded from
+git or an explicitly exported source file. Screen all candidates against an
+independent genetic-code matrix/derivative oracle. Run whole-objective benchmarks
+with the production JIT boundaries; expose an additional outer JIT only as an
+explicit diagnostic option.
+
+**Rationale:** Initial diagnostic runs with an extra whole-objective JIT showed
+gradient differences between algebraically equivalent candidates at symmetric
+parameters, even though likelihoods matched. A one-site reproduction also showed
+that adding this JIT changes the baseline's own gradients beyond the protected
+tolerance. The actual optimizer path produced matching baseline/candidate matrices,
+likelihoods, and gradients. Introducing an outer JIT would mix PERF-04 into this
+task and obscure the intended GTR comparison.
+
+**Consequences:** Retain the diagnostic evidence separately and repeat screening
+using the actual optimizer boundary. Do not change reference values, tolerances,
+eigensolver behavior, or JIT coverage. Treat the outer-JIT gradient sensitivity as
+a correctness concern to investigate before any future PERF-04 change, including
+other fully jitted consumers such as the NUTS step. This MAP-focused campaign did
+not add sampler-specific numerical comparisons.
+
+### 2026-10-04 — PERF-01 selected GTR representation
+
+**Context:** Twelve kernel variants and two full-MAP finalists were compared
+against the original implementation, with the same CPU/four-worker float64 setup.
+
+**Decision:** Retain the combined lookup implementation: decode one compact static
+codon substitution table into rate indices and a nonsynonymous mask; gather the
+six rates plus a zero sentinel; use masked omega scaling and diagonal replacement;
+replace diagonal-frequency matrix products with broadcasting. Preserve GTR helper
+signatures and profiler annotation. No likelihood, optimizer, or JIT boundaries
+change. The static table matches all 526 original entries, including 392 omega
+entries, and is checked against an independent genetic-code oracle.
+
+**Rationale:** Across three valid fresh-process MAP comparisons per variant,
+median compilation-inclusive startup fell from 3.772 s to 3.288 s (12.83%).
+Median warm MAP time increased from 88.843 s to 90.883 s (2.30%), within the
+planned 5% limit for accepting a startup improvement of at least 10%. The
+2,940-site warm per-site objective/gradient probe increased 4.75%; first-call
+time decreased 19.68%. Frequency broadcasting alone did not establish a benefit.
+
+**Consequences:** This is a startup optimization, not a demonstrated improvement
+to sustained MAP throughput. Separate three-process large-input memory probes had
+median peak RSS 11.020 GB (baseline) and 11.480 GB (selected), about 4.17% higher;
+the longer six-call objective probes peaked at 11.780 and 11.722 GB respectively.
+Do not claim a memory improvement. Raw timings, numerical comparisons, rejected
+variants, and reproduction commands are retained with the benchmark report.
+Two initial pilots were excluded and replaced because the runner initially
+configured logging too late to capture startup timing and enable progress logs.
+
 # Blockers
 
 None.
@@ -783,6 +849,50 @@ function naming, and JAXopt warning investigation
 **Blockers:** None.
 
 **Next:** PERF-01 — GTR operations; wait for the user to request it.
+
+## 2026-10-04 — PERF-01 GTR benchmarks and startup optimisation
+
+**Task:** PERF-01 — GTR operations.
+
+**Completed:**
+- Compared twelve kernel variants, screened scalar/per-site objective gradients
+  at 294 and 2,940 sites, and ran three valid fresh-process MAP comparisons for
+  baseline and each of two finalists. Excluded/replaced two logging-affected
+  pilots; repeated baseline/selected large-input memory probes three times.
+- Replaced GTR scatter assembly and redundant static tables with one compact
+  substitution table, rate lookup, masked updates, and frequency broadcasting.
+  Kept helper signatures, numerical semantics, and profiler annotation.
+- Added independent genetic-code matrix, structural-zero, stationarity,
+  diagonal replacement, and reverse-derivative checks. Added reusable benchmark
+  variants/runner and retained reproducible measurements with the report.
+
+**Tests/benchmarks:**
+- `python -m pytest -q`: 72 passed, 10 subtests passed, 2 existing dependency
+  warnings, 120.13 seconds. Protected likelihood/gradient and MAP references,
+  including all 294 omega estimates, passed unchanged.
+- CLI help, `python -m compileall -q tombombadil test`, and `git diff --check`
+  passed. Existing user-generated CSV/PDF outputs were left untouched.
+- Median MAP startup: 3.772 -> 3.288 s (12.83% shorter). Median warm MAP:
+  88.843 -> 90.883 s (2.30% longer), satisfying the agreed startup criterion.
+  All accepted runs converged in 210 steps to the fixed objective.
+- A separate installed-production confirmation measured 3.238 s startup and
+  90.732 s warm MAP, with all reference estimates passing.
+- Separate large-input memory medians were 11.020 -> 11.480 GB peak RSS;
+  longer objective probes were both approximately 11.7 GB. No memory reduction
+  or sustained MAP speedup is claimed. Details and individual samples are in
+  `test/perf01_results.md` and `test/benchmarks/perf01_results.json`.
+
+**Decisions/follow-up:**
+- Retain combined lookup under the pre-agreed startup improvement criterion;
+  reject the isolated frequency, einsum, and six-mask alternatives.
+- Adding an outer JIT exposed gradient sensitivity even in the original
+  baseline. Corrected the benchmark to match the actual optimizer boundary;
+  recorded the diagnostic separately for future JIT/numerical investigation.
+  No JIT coverage, eigensolver, reference values, or tolerances were changed.
+
+**Blockers:** None for PERF-01.
+
+**Next:** PERF-02 — `_gen_alpha_impl`; do not start automatically.
 
 ---
 
