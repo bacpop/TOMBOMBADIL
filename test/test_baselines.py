@@ -12,7 +12,11 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from tombombadil.sample import make_fn, softplus_inverse, transforms
+from tombombadil.sample import (
+    make_log_density_fn,
+    positive_transform_inverse,
+    prepare_likelihood_transforms,
+)
 
 
 REFERENCE_DIR = Path(__file__).parent / "fixtures"
@@ -28,8 +32,8 @@ class TestLikelihoodGradientReference(unittest.TestCase):
         X[15, 0] = 4
         X[47, 0] = 19
         pi = np.full(61, 1 / 61)
-        log_pi, pimat, pimatinv, pimult = transforms(X, pi)
-        fn = make_fn(
+        log_pi, pimat, pimatinv, pimult = prepare_likelihood_transforms(X, pi)
+        fn = make_log_density_fn(
             pi, log_pi, pimat, pimatinv, pimult, X, jnp.ones(1),
             include_invariant=True,
             aggregate="mean",
@@ -40,14 +44,14 @@ class TestLikelihoodGradientReference(unittest.TestCase):
             omega_mode="scalar",
         )
         params = {
-            "alpha": softplus_inverse(1.0),
-            "beta": softplus_inverse(1.0),
-            "gamma": softplus_inverse(1.0),
-            "delta": softplus_inverse(1.0),
-            "epsilon": softplus_inverse(1.0),
-            "eta": softplus_inverse(1.0),
-            "theta": softplus_inverse(0.5),
-            "omega": jnp.array(softplus_inverse(0.5), dtype=jnp.float64),
+            "alpha": positive_transform_inverse(1.0),
+            "beta": positive_transform_inverse(1.0),
+            "gamma": positive_transform_inverse(1.0),
+            "delta": positive_transform_inverse(1.0),
+            "epsilon": positive_transform_inverse(1.0),
+            "eta": positive_transform_inverse(1.0),
+            "theta": positive_transform_inverse(0.5),
+            "omega": jnp.array(positive_transform_inverse(0.5), dtype=jnp.float64),
         }
 
         likelihood, gradient = jax.value_and_grad(fn)(params)

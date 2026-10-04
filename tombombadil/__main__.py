@@ -1,12 +1,15 @@
 #!/usr/bin/env python
 
 import logging
-import gzip
-import os
 import argparse
 import numpy as np
 
 from .__init__ import __version__
+from .alignment import (
+    count_codons,
+    estimate_f3x4_pi_from_counts,
+    estimate_pi_from_counts,
+)
 
 
 def _positive_int(value):
@@ -17,48 +20,6 @@ def _positive_int(value):
     if parsed < 1:
         raise argparse.ArgumentTypeError("must be a positive integer")
     return parsed
-
-# expected order
-# "TTT","TTC","TTA","TTG","TCT","TCC","TCA","TCG","TAT","TAC","TGT","TGC"
-# "TGG","CTT","CTC","CTA","CTG","CCT","CCC","CCA","CCG","CAT","CAC","CAA"
-# "CAG","CGT","CGC","CGA","CGG","ATT","ATC","ATA","ATG","ACT","ACC","ACA"
-# "ACG","AAT","AAC","AAA","AAG","AGT","AGC","AGA","AGG","GTT","GTC","GTA"
-# "GTG","GCT","GCC","GCA","GCG","GAT","GAC","GAA","GAG","GGT","GGC","GGA"
-# "GGG"
-# mapped to
-col_order = np.array([63, 61, 60, 62, 55, 53, 52, 54, 51, 49, 59, 57, 58, 31, 29, 28, 30,
-                      23, 21, 20, 22, 19, 17, 16, 18, 27, 25, 24, 26, 15, 13, 12, 14,  7,
-                       5,  4,  6,  3,  1,  0,  2, 11,  9,  8, 10, 47, 45, 44, 46, 39, 37,
-                      36, 38, 35, 33, 32, 34, 43, 41, 40, 42, 48, 50, 56, 64])
-#stop codons 48 50 56
-#Ns 64
-
-# I think what this means: reading in with the 0,1,2,3 encoding results in order A,C,G,T
-# but we want order T,C,A,G
-# AAA = 0, AAC = 1, AAG = 2, AAT, 3, 
-# ACA = 4, ACC = 5, ACG = 6, ACT = 7, 
-# AGA = 8, AGC = 9, AGG = 10, AGT = 11
-# ATA = 12, ATC = 13, ATG = 14, ATT = 15
-# C** = 16-31
-# G** = 32 - 47
-# TAA = STOP = 48, TAC = 49, TAG = STOP = 50, TAT = 51
-# TCA = 52, TCC = 53, TCG = 54, TCT = 55,
-# TGA = STOP = 56, TGC = 57, TGG = 58, TGT = 59
-# TTA = 60, TTC = 61, TTG = 62, TTT = 63
-
-BASE_ORDER = ("T", "C", "A", "G")
-STOP_CODONS = {"TAA", "TAG", "TGA"}
-CODON_LIST = tuple(
-    codon
-    for codon in (
-        first + second + third
-        for first in BASE_ORDER
-        for second in BASE_ORDER
-        for third in BASE_ORDER
-    )
-    if codon not in STOP_CODONS
-)
-BASE_TO_INDEX = {base: idx for idx, base in enumerate(BASE_ORDER)}
 
 def get_options():
     parser = argparse.ArgumentParser(
@@ -170,136 +131,6 @@ def get_options():
 
     args = parser.parse_args()
     return args
-
-def read_fasta(fp):
-    name, seq = None, []
-    for line in fp:
-        line = line.rstrip()
-        if line.startswith(">"):
-            if name: yield (name, ''.join(seq))
-            name, seq = line[1:], []
-        else:
-            seq.append(line)
-    if name: yield (name, ''.join(seq))
-
-def count_codons(file_name):
-    n_samples = 0
-    with open(file_name, 'rb') as test_f:
-        zipped = test_f.read(2) == b'\x1f\x8b'
-    if zipped:
-        fh = gzip.open(file_name, 'rt')
-    else:
-        fh = open(file_name, 'rt')
-    with fh as fasta:
-        X = None
-        for h, s in read_fasta(fasta):
-            n_samples += 1
-            s = np.frombuffer(s.lower().encode(), dtype=np.int8)
-            if X is None:
-                X = np.zeros((65, s.shape[0] // 3), dtype=np.int32)
-            # Set ambiguous bases
-            ambig = np.argwhere((s!=97) & (s!=99) & (s!=103) & (s!=116))
-            #print("ambig",ambig)
-            s = np.copy(s) # without copying I got ValueError: assignment destination is read-only
-            if ambig.any():
-                s[ambig] = 64
-            codon_s = s.reshape(-1, 3).copy()
-            #print('codon_s',codon_s)
-            # Convert to usual binary encoding
-            codon_s[codon_s==97] = 0 # A
-            codon_s[codon_s==99] = 1 # C
-            codon_s[codon_s==103] = 2 # G
-            codon_s[codon_s==116] = 3 # T
-            # Bit shift
-            #print('codon_s',codon_s)
-            codon_s[:,1] = np.left_shift(codon_s[:, 1], 2)
-            codon_s[:,0] = np.left_shift(codon_s[:, 0], 4) # changed bit shift to first position (because we're ordering AAA, AAC, AAG, AAT, ACA, ... (= first position has longest "duration"))
-            codon_map = np.fmin(np.sum(codon_s, 1), 64)
-            #print('codon_s',codon_s)
-            #print('codon_map',codon_map)
-            # slow? Alternative would be to make X have shape (samples, n_codons)
-            # and copy codon map into each row, then run np.bincount along columns
-            for idx, count in enumerate(codon_map):
-                X[count,idx] += 1
-
-    # reorder and cut off stops, ambiguous
-    #print("X", X[:,10])
-    X = X[col_order,:]
-    X = X[0:61, :]
-
-    return X, n_samples
-
-def estimate_pi_from_counts(X, pseudocount):
-    X = np.asarray(X)
-    if X.shape[0] != 61:
-        raise ValueError(f"Expected codon count matrix with 61 rows, got {X.shape[0]}")
-    if pseudocount < 0:
-        raise ValueError("--pi-pseudocount must be non-negative")
-
-    observed_counts = X.sum(axis=1, dtype=np.float64)
-    if observed_counts.sum() <= 0:
-        raise ValueError("Cannot estimate pi: no non-stop codons were observed in the alignment")
-
-    smoothed_counts = observed_counts + pseudocount
-    total = smoothed_counts.sum()
-    if total <= 0:
-        raise ValueError("Cannot estimate pi: smoothed codon counts sum to zero")
-
-    pi = smoothed_counts / total
-    if pi.shape != (61,) or not np.all(np.isfinite(pi)) or np.any(pi <= 0):
-        raise ValueError(
-            "Estimated pi must contain 61 finite, strictly positive non-stop codon frequencies"
-        )
-    return pi
-
-def estimate_f3x4_frequencies_from_counts(X, pseudocount):
-    X = np.asarray(X)
-    if X.shape[0] != 61:
-        raise ValueError(f"Expected codon count matrix with 61 rows, got {X.shape[0]}")
-    if pseudocount < 0:
-        raise ValueError("--pi-pseudocount must be non-negative")
-
-    observed_counts = X.sum(axis=1, dtype=np.float64)
-    if observed_counts.sum() <= 0:
-        raise ValueError("Cannot estimate F3x4 pi: no non-stop codons were observed in the alignment")
-
-    nucleotide_counts = np.full((3, 4), pseudocount, dtype=np.float64)
-    for codon, count in zip(CODON_LIST, observed_counts):
-        for position, base in enumerate(codon):
-            nucleotide_counts[position, BASE_TO_INDEX[base]] += count
-
-    row_totals = nucleotide_counts.sum(axis=1, keepdims=True)
-    if np.any(row_totals <= 0):
-        raise ValueError("Cannot estimate F3x4 pi: smoothed nucleotide counts sum to zero")
-
-    frequencies = nucleotide_counts / row_totals
-    if frequencies.shape != (3, 4) or not np.all(np.isfinite(frequencies)) or np.any(frequencies <= 0):
-        raise ValueError(
-            "Estimated F3x4 nucleotide frequencies must be a finite, strictly positive 3x4 matrix"
-        )
-
-    return frequencies
-
-def estimate_f3x4_pi_from_counts(X, pseudocount):
-    frequencies = estimate_f3x4_frequencies_from_counts(X, pseudocount)
-    pi = np.array(
-        [
-            frequencies[0, BASE_TO_INDEX[codon[0]]]
-            * frequencies[1, BASE_TO_INDEX[codon[1]]]
-            * frequencies[2, BASE_TO_INDEX[codon[2]]]
-            for codon in CODON_LIST
-        ],
-        dtype=np.float64,
-    )
-    total = pi.sum()
-    if total <= 0:
-        raise ValueError("Cannot estimate F3x4 pi: codon frequencies sum to zero")
-
-    pi = pi / total
-    if pi.shape != (61,) or not np.all(np.isfinite(pi)) or np.any(pi <= 0):
-        raise ValueError("Estimated F3x4 pi must contain 61 finite, strictly positive codon frequencies")
-
-    return pi
 
 def configure_jax_for_options(options):
     """Set JAX process flags that must exist before JAX is imported."""

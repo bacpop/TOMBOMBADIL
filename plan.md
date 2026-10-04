@@ -19,25 +19,31 @@ MAINT-06 is complete. Shared model preparation and MAP execution have dedicated
 functions; `main()` prepares the model and dispatches directly to MAP or NUTS.
 MAINT-07 is complete. CLI help is grouped by workflow, MAP uses `--max-it` with
 early convergence enabled by default, and former CLI-owned function defaults
-are explicit at call sites. Numerical references remain unchanged.
+are explicit at call sites. MAINT-08, MAINT-09, and MAINT-10 are complete.
+Alignment parsing, codon counting, and frequency estimation live in
+`tombombadil/alignment.py`; approved helper names now describe their roles.
+The JAXopt pytest warning is documented as coming from BlackJAX's eager
+imports; the project has no direct JAXopt dependency. Numerical references
+remain unchanged.
 
 # Current Task
 
-## MAINT-07 — CLI organisation
+## MAINT-08/09/10 — Alignment I/O, function names, and JAXopt warning
 
-Reorder CLI help into primary input/output, fitting method, and runtime groups,
-then separate shared model, MAP/Optax, NUTS/BlackJAX, diagnostics, and other
-options. Use `--max-it` for MAP, enable early convergence by default, and remove
-the redundant function defaults that duplicate CLI-owned settings.
+Move FASTA parsing, codon counting, and frequency estimation out of `__main__`
+into a focused alignment module, and share the parser with domain labeling.
+Rename the reviewed likelihood, optimizer, transform, mask, and parameter
+transformation helpers without changing numerical behavior. Record the
+pytest JAXopt warning as an upstream BlackJAX import/dependency issue; make no
+environment, dependency, or warning-filter changes.
 
 ### Checklist
 
-- [x] Reorder help groups: Input/output, Fitting method, CPU/runtime, Shared model, MAP/Optax, NUTS/BlackJAX, diagnostics, Other; show defaults from parser values.
-- [x] Replace `--sample-it` with positive `--max-it` for MAP (default 500); remove `--fit-until-convergence`, enable convergence by default, and add `--fixed-iterations` to disable it. Retain `--num-samples` for NUTS (default 1000); reject the removed flags.
-- [x] Remove function defaults that duplicate CLI-owned settings from model/prior, parameter conversion and initialization, fitting, uncertainty/output/posterior/plot, pseudocount, CPU configuration, and replicate iteration helpers. Keep optional data and internal control defaults.
-- [x] Update every repository caller to pass former defaults explicitly, preserving each caller's existing effective values and the protected numerical references.
-- [x] Update README examples, test commands, and benchmark usage for the new option names and default convergence behavior.
-- [x] Run parser/help checks, relevant existing tests, the protected MAP integration test with pinned 5/10/50 convergence settings, the full suite, and `git diff --check`.
+- [x] Extract shared FASTA reading, codon counting, and frequency estimation into `tombombadil/alignment.py`; update CLI, domain plotting, and analysis callers.
+- [x] Apply approved naming changes throughout implementation, tests, benchmarks, and docs while retaining signatures and calculations.
+- [x] Add focused coverage for multi-record/wrapped FASTA, gzip input, codon counting, and domain parsing behavior.
+- [x] Run relevant tests, protected likelihood/gradient and pinned MAP references, the full suite, CLI help, and `git diff --check`.
+- [x] Record the JAXopt warning's upstream source and environment version mismatch; make no project dependency or warning suppression changes.
 - [x] Update Current Status, Design Notes, Session Log, blockers, and Next Task.
 
 ### Guardrails
@@ -55,7 +61,7 @@ Performance comparisons must use comparable inputs, configuration, hardware, and
 
 # Next Task
 
-After MAINT-07 is complete, continue with MAINT-08 — Move I/O functions out of `__main__`. Do not begin it automatically.
+After MAINT-08/09/10, continue with PERF-01 — GTR operations; do not start it automatically.
 
 ---
 
@@ -207,24 +213,27 @@ for optional data and internal controls that have no CLI counterpart.
 
 ### MAINT-08 — Move I/O functions out of `__main__`
 
-Move I/O-related functions from `__main__` into an appropriate module.
+Move FASTA reading, codon counting, and alignment-derived codon frequency
+estimation from `__main__` into `tombombadil/alignment.py`.
 
-Consolidate duplicated `read_fasta()` / `read_alignment()` functionality currently present in `domains.py`.
+Consolidate the duplicate FASTA readers in `domains.py` on the shared parser.
 
 ### MAINT-09 — Improve function names
 
 Review and rename unclear functions, including:
 
-- `my_dirichlet_multinomial_logpmf`
-- `make_fn`
-- `_run_replicates`
+- `my_dirichlet_multinomial_logpmf` and its alternate implementation
+- the log-density factory and MAP replicate runner
+- likelihood transforms, codon-site likelihoods, the variable-site mask, and
+  the positive parameter transform and its inverse
 
 Names should describe their role rather than implementation history.
 
-### MAINT-10 – remove JAXopt
+### MAINT-10 — Investigate the JAXopt pytest warning
 
-JAXopt is deprecated. We don't rely on it explicitly, but is giving
-a testing warning. Fix this warning / remove the dependency.
+JAXopt is deprecated. Confirm whether the warning comes from a direct project
+dependency or an upstream import; remove a direct dependency if present, or
+record the upstream cause when no project change is needed.
 
 ---
 
@@ -302,7 +311,7 @@ The project is complete when:
 - [x] The required unit and integration tests exist.
 - [x] All required tests pass.
 - [x] Numerical correctness guardrails are satisfied.
-- [ ] Approved maintainability work is complete.
+- [x] Approved maintainability work is complete.
 - [ ] Approved optimisation work has been benchmarked and accepted or rejected based on evidence.
 - [x] `plan.md` accurately reflects the final repository state.
 
@@ -524,6 +533,39 @@ omega floor enabled, scalar omega). The MAP fixture continues to pin its
 established 5/10/50 convergence settings. No reference value or tolerance is
 changed.
 
+### 2026-10-03 — Shared alignment input, clearer helper names, and JAXopt warning
+
+**Context:** MAINT-08 and MAINT-09 were batched to extract alignment I/O and
+clarify several ambiguous helper names. Pytest also reported that JAXopt is no
+longer maintained.
+
+**Decision:** Move FASTA parsing, codon counting/order, and empirical/F3x4
+frequency estimation into `tombombadil.alignment`. Use its shared reader in
+domain labeling and support gzip input through the same reader. Rename the
+likelihood helpers to `dirichlet_multinomial_logpmf` and
+`dirichlet_multinomial_logpmf_scipy_form`, `make_log_density_fn`,
+`_run_map_replicates`, `prepare_likelihood_transforms`,
+`make_variable_site_mask`, `positive_transform` and
+`positive_transform_inverse`, and `codon_site_log_likelihood` and
+`codon_site_log_likelihood_no_jitter`. Preserve their calculations and update
+all callers, tests, and the benchmark wrapper. Leave the JAXopt warning visible
+and make no environment or dependency changes.
+
+**Rationale:** BlackJAX 1.3 eagerly imports its L-BFGS and Pathfinder utilities,
+which import JAXopt while pytest collects the package. The active environment
+has JAXopt 0.8.4 although BlackJAX metadata declares `jaxopt<=0.8.3`;
+`pyproject.toml` has no direct JAXopt requirement. This warning therefore does
+not identify a project dependency to remove.
+
+**Consequences:** Added alignment tests for wrapped and multi-record FASTA,
+plain/gzip parity, codon counts, and domain labels using the shared reader. The
+focused run passed 55 tests and 6 subtests; the full suite passed 64 tests and
+10 subtests in 174.18 seconds. The protected likelihood/gradient and pinned
+MAP references passed unchanged. Both existing dependency warnings remain:
+the JAXopt warning and a `fastcore` asyncio deprecation warning. CLI help and
+`git diff --check` passed. No performance benchmark was needed because MAP
+execution and its timing boundary did not change.
+
 # Blockers
 
 None.
@@ -711,6 +753,36 @@ requested.
 
 **Next:** MAINT-08 — Move I/O functions out of `__main__`; do not begin until
 requested.
+
+## 2026-10-03 — MAINT-08/09/10 alignment and naming batch
+
+**Task:** MAINT-08, MAINT-09, and MAINT-10 — Alignment input extraction,
+function naming, and JAXopt warning investigation
+
+**Completed:**
+- Moved FASTA readers, codon counting/order, and alignment-derived frequency
+  estimation to `tombombadil/alignment.py`. Updated the CLI, diversity plot,
+  domain labeling, tests, and benchmark caller.
+- Renamed the reviewed likelihood, MAP replicate, likelihood transform,
+  variable-site mask, and positive parameter transformation functions and
+  updated their callers.
+- Traced the pytest JAXopt warning to BlackJAX 1.3 importing its optimizer and
+  Pathfinder utilities. The active environment has JAXopt 0.8.4 while
+  BlackJAX declares `jaxopt<=0.8.3`; `pyproject.toml` has no direct JAXopt
+  dependency. No dependency or warning-filter changes were made.
+
+**Tests:**
+- Focused input, existing helper, progress/output, and baseline tests:
+  55 passed, 6 subtests passed.
+- `python -m pytest -q`: 64 passed, 10 subtests passed, with the same 2
+  dependency deprecation warnings; completed in 174.18 s. Protected numerical
+  references remained unchanged.
+- `python -m tombombadil --help`, `python -m compileall -q tombombadil test
+  plot_codon_diversity.py`, and `git diff --check` succeeded.
+
+**Blockers:** None.
+
+**Next:** PERF-01 — GTR operations; wait for the user to request it.
 
 ---
 

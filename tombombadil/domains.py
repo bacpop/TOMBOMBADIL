@@ -8,40 +8,13 @@ import json
 import warnings
 
 import numpy as np
-
-
-def _read_fasta(path):
-    sequence = []
-    with open(path) as handle:
-        for line in handle:
-            line = line.strip()
-            if line and not line.startswith(">"):
-                sequence.append(line)
-    return "".join(sequence)
-
-
-def _read_alignment(path):
-    records = []
-    header = None
-    sequence = []
-    with open(path) as handle:
-        for line in handle:
-            line = line.strip()
-            if line.startswith(">"):
-                if header is not None:
-                    records.append((header, "".join(sequence)))
-                header, sequence = line[1:], []
-            elif line:
-                sequence.append(line)
-    if header is not None:
-        records.append((header, "".join(sequence)))
-    return records
+from .alignment import read_alignment
 
 
 def parse_domain_labels(json_path, alignment_path, reference_path, n_sites):
     """Return ``other``/``extracellular`` labels for alignment codon sites."""
-    records = _read_alignment(alignment_path)
-    reference_length = len(_read_fasta(reference_path))
+    records = read_alignment(alignment_path)
+    reference_length = sum(len(sequence) for _, sequence in read_alignment(reference_path))
     if not records or reference_length <= 0:
         raise ValueError("Alignment and non-empty reference protein are required")
 

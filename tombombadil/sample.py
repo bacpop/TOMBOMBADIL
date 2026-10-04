@@ -51,7 +51,7 @@ def likelihood_plot_path(output_stem, omega_mode):
     return mode_output_stem(output_stem, omega_mode) + "_likelihood_plot.pdf"
 
 @jit
-def my_dirichlet_multinomial_logpmf(x, a):
+def dirichlet_multinomial_logpmf(x, a):
     x = jnp.asarray(x, dtype=jnp.float64)
     a = jnp.asarray(a, dtype=jnp.float64)
 
@@ -77,7 +77,7 @@ def my_dirichlet_multinomial_logpmf(x, a):
     return term1 + term2 + term3 # gives 1407.2288
 
 # This version is adapted from the scipy implementation
-def my_dirichlet_multinomial_logpmf_2(x, a):
+def dirichlet_multinomial_logpmf_scipy_form(x, a):
     x = jnp.asarray(x)
     a = jnp.asarray(a)
 
@@ -94,7 +94,7 @@ def my_dirichlet_multinomial_logpmf_2(x, a):
     return out
 
 @jit
-def model(alpha, beta, gamma, delta, epsilon, eta, mu, omega, pi_eq, log_pi, pimat, pimatinv, pimult, obs_vec):
+def codon_site_log_likelihood(alpha, beta, gamma, delta, epsilon, eta, mu, omega, pi_eq, log_pi, pimat, pimatinv, pimult, obs_vec):
     # Calculate substitution rate matrix under neutrality
     #print(pimat)
     #print(pimult)
@@ -122,10 +122,10 @@ def model(alpha, beta, gamma, delta, epsilon, eta, mu, omega, pi_eq, log_pi, pim
     #log_prob = scipy.stats.multinomial.pmf(obs_vec, N, alpha) # this is where it breaks but is it because the code is broken or because of lack of diversity? It is not because of the lack of diversity
     #log_prob = scipy.stats.multinomial.logpmf(obs_vec, N, alpha) # this is pmf in John's code but we think it might need to be pmf?
     # log_prob = scipy.stats.dirichlet_multinomial.logpmf(obs_vec, alpha, N) # gives -10.21301 (correct)
-    log_prob = my_dirichlet_multinomial_logpmf(obs_vec, A2) # our custom, jnp based dirichlet_multinomial.logpmf but something is wrong in the implementation this function gives us an integer, we want a vector of length 61
+    log_prob = dirichlet_multinomial_logpmf(obs_vec, A2) # our custom, jnp based dirichlet_multinomial.logpmf but something is wrong in the implementation this function gives us an integer, we want a vector of length 61
 
-    #print("Difference between scipy and custom jax dirichlet-multinomial logpmf:", scipy.stats.dirichlet_multinomial.logpmf(obs_vec, alpha, N) - my_dirichlet_multinomial_logpmf(obs_vec, alpha))
-    #print("Difference between scipy and other custom jax dirichlet-multinomial logpmf:", scipy.stats.dirichlet_multinomial.logpmf(obs_vec, alpha, N) - my_dirichlet_multinomial_logpmf_2(obs_vec, alpha))
+    #print("Difference between scipy and custom jax dirichlet-multinomial logpmf:", scipy.stats.dirichlet_multinomial.logpmf(obs_vec, alpha, N) - dirichlet_multinomial_logpmf(obs_vec, alpha))
+    #print("Difference between scipy and other custom jax dirichlet-multinomial logpmf:", scipy.stats.dirichlet_multinomial.logpmf(obs_vec, alpha, N) - dirichlet_multinomial_logpmf_scipy_form(obs_vec, alpha))
     
     #print("log_prob_shape",log_prob.shape)
     #print('log_prob: ',log_prob)
@@ -138,15 +138,15 @@ def model(alpha, beta, gamma, delta, epsilon, eta, mu, omega, pi_eq, log_pi, pim
 
 
 @jit
-def model_no_jitter(alpha, beta, gamma, delta, epsilon, eta, mu, omega, pi_eq, log_pi, pimat, pimatinv, pimult, obs_vec):
+def codon_site_log_likelihood_no_jitter(alpha, beta, gamma, delta, epsilon, eta, mu, omega, pi_eq, log_pi, pimat, pimatinv, pimult, obs_vec):
     A = build_GTR(alpha, beta, gamma, delta, epsilon, eta, 1, pimat, pimult)
     meanrate = -jnp.dot(jnp.diagonal(A), pi_eq)
     scale = (mu / 2.0) / meanrate
     A2 = gen_alpha_no_jitter(omega, A, pimat, pimult, pimatinv, scale)
-    log_prob = my_dirichlet_multinomial_logpmf(obs_vec, A2)
+    log_prob = dirichlet_multinomial_logpmf(obs_vec, A2)
     return special.logsumexp(log_prob + log_pi, axis=0)
 
-def transforms(X, pi_eq):
+def prepare_likelihood_transforms(X, pi_eq):
     #N = np.sum(X, 0)
     #n_loci = len(N)
 
@@ -163,16 +163,17 @@ def transforms(X, pi_eq):
 
     return log_pi, pimat, pimatinv, pimult
 
-def positive(a): # transformation for ensuring positive parameter values in model
-        eps = 1e-6
-        return jnp.exp(a) + eps
-        #return jnp.exp(a)
+def positive_transform(a):
+    """Map raw values to positive natural scale with the existing 1e-6 floor."""
+    return jnp.exp(a) + 1e-6
 
-def softplus_inverse(y, eps=1e-6): # inverse transformation for calculating raw parameter values (e.g. for start values of parameters)
+
+def positive_transform_inverse(y, eps=1e-6):
+    """Convert positive natural-scale values to the corresponding raw log scale."""
     z = y - eps
-    #z = y
-    return jnp.log((z))
-    
+    return jnp.log(z)
+
+
 def _log_transform_jacobian(raw_value):
     return jnp.log(jnp.exp(raw_value))
 
@@ -202,7 +203,7 @@ def prior_log_likelihood(raw_x, n_sites, *, prior_mode, estimate_eta,
         return jnp.array(0.0, dtype=jnp.float64)
 
     validate_omega_mode(omega_mode)
-    omega = positive(raw_x["omega"])
+    omega = positive_transform(raw_x["omega"])
 
     if prior_mode == "current":
         omega_prior = jax.scipy.stats.norm.logpdf(jnp.log(omega), jnp.log(0.5), 1.0)
@@ -220,13 +221,13 @@ def prior_log_likelihood(raw_x, n_sites, *, prior_mode, estimate_eta,
 
     gtr_terms = []
     for k in gtr_keys:
-        term = jax.scipy.stats.norm.logpdf(positive(raw_x[k]), 0.0, 1.0)
+        term = jax.scipy.stats.norm.logpdf(positive_transform(raw_x[k]), 0.0, 1.0)
         if prior_mode == "stan_unconstrained":
             term += _log_transform_jacobian(raw_x[k])
         gtr_terms.append(term)
     gtr_prior = jnp.sum(jnp.array(gtr_terms))
 
-    theta_prior = jax.scipy.stats.norm.logpdf(positive(raw_x["theta"]), 0.0, 1.0)
+    theta_prior = jax.scipy.stats.norm.logpdf(positive_transform(raw_x["theta"]), 0.0, 1.0)
     if prior_mode == "stan_unconstrained":
         theta_prior += _log_transform_jacobian(raw_x["theta"])
 
@@ -241,11 +242,11 @@ def prior_log_likelihood(raw_x, n_sites, *, prior_mode, estimate_eta,
     return (omega_prior + gtr_prior) / n_sites + theta_prior
 
 
-def make_fn(pi_eq, log_pi, pimat, pimatinv, pimult, X, mask,
+def make_log_density_fn(pi_eq, log_pi, pimat, pimatinv, pimult, X, mask,
             *, include_invariant, aggregate, prior_mode, estimate_eta,
             eigen_jitter, omega_floor, omega_mode): # closure for defining fn
     validate_omega_mode(omega_mode)
-    model_fn = model if eigen_jitter else model_no_jitter
+    model_fn = codon_site_log_likelihood if eigen_jitter else codon_site_log_likelihood_no_jitter
     omega_axis = None if omega_mode == "scalar" else 0
     batched_loss = jax.vmap(
         model_fn,
@@ -256,9 +257,8 @@ def make_fn(pi_eq, log_pi, pimat, pimatinv, pimult, X, mask,
 
         #x = jnp.exp(x)
         #print('x: ',x)
-        #return model(x[0], x[1], x[2], x[3], x[4], x[5], x[6], x[7:], pi_eq, log_pi, N[col], pimat, pimatinv, pimult, X[:, col])
-        #return model(x[0], x[1], x[2], x[3], x[4], x[5], x[6], x[7:], pi_eq, log_pi, N[col], pimat, pimatinv, pimult, X)
-        x = jax.tree.map(positive, raw_x)
+        #return codon_site_log_likelihood(...)
+        x = jax.tree.map(positive_transform, raw_x)
 
         if omega_mode == "per-site" and x["omega"].shape != (X.shape[1],):
             raise ValueError(
@@ -300,10 +300,10 @@ def make_fn(pi_eq, log_pi, pimat, pimatinv, pimult, X, mask,
 def natural_to_raw_params(params, *, omega_mode):
     """Convert positive natural-scale parameters to this code's raw log scale."""
     validate_omega_mode(omega_mode)
-    return {k: jnp.array(softplus_inverse(v), dtype=jnp.float64) for k, v in params.items()}
+    return {k: jnp.array(positive_transform_inverse(v), dtype=jnp.float64) for k, v in params.items()}
 
 
-def make_mask(X):
+def make_variable_site_mask(X):
     col_max = np.max(X, axis=0)
     col_sum = np.sum(X, axis=0)
     return np.where(col_max == col_sum, 0, 1)
@@ -314,20 +314,20 @@ def make_base_params(*, estimate_eta, n_sites=None, omega_mode):
     validate_omega_mode(omega_mode)
     if omega_mode == "per-site" and n_sites is None:
         raise ValueError("n_sites is required for per-site omega")
-    omega = jnp.array(softplus_inverse(0.5), dtype=jnp.float64)
+    omega = jnp.array(positive_transform_inverse(0.5), dtype=jnp.float64)
     if omega_mode == "per-site":
         omega = jnp.repeat(omega, int(n_sites))
     params = {
-        "alpha":   jnp.array(softplus_inverse(1),   dtype=jnp.float64),
-        "beta":    jnp.array(softplus_inverse(1),   dtype=jnp.float64),
-        "gamma":   jnp.array(softplus_inverse(1),   dtype=jnp.float64),
-        "delta":   jnp.array(softplus_inverse(1),   dtype=jnp.float64),
-        "epsilon": jnp.array(softplus_inverse(1),   dtype=jnp.float64),
-        "theta":   jnp.array(softplus_inverse(0.5), dtype=jnp.float64),
+        "alpha":   jnp.array(positive_transform_inverse(1),   dtype=jnp.float64),
+        "beta":    jnp.array(positive_transform_inverse(1),   dtype=jnp.float64),
+        "gamma":   jnp.array(positive_transform_inverse(1),   dtype=jnp.float64),
+        "delta":   jnp.array(positive_transform_inverse(1),   dtype=jnp.float64),
+        "epsilon": jnp.array(positive_transform_inverse(1),   dtype=jnp.float64),
+        "theta":   jnp.array(positive_transform_inverse(0.5), dtype=jnp.float64),
         "omega":   omega,
     }
     if estimate_eta:
-        params["eta"] = jnp.array(softplus_inverse(1), dtype=jnp.float64)
+        params["eta"] = jnp.array(positive_transform_inverse(1), dtype=jnp.float64)
     return params
 
 
@@ -340,10 +340,10 @@ def evaluate_fixed_params(X, pi_eq, natural_params, *, include_invariant,
                           aggregate, prior_mode, estimate_eta, eigen_jitter,
                           omega_floor, omega_mode):
     """Evaluate the scalar-GTR objective at fixed natural-scale parameters."""
-    log_pi, pimat, pimatinv, pimult = transforms(X, pi_eq)
-    mask = make_mask(X)
+    log_pi, pimat, pimatinv, pimult = prepare_likelihood_transforms(X, pi_eq)
+    mask = make_variable_site_mask(X)
     raw_params = natural_to_raw_params(natural_params, omega_mode=omega_mode)
-    fn = make_fn(
+    fn = make_log_density_fn(
         pi_eq, log_pi, pimat, pimatinv, pimult, X, mask,
         include_invariant=include_invariant,
         aggregate=aggregate,
@@ -392,11 +392,11 @@ def _optimize_params(fn, params, solver, n_iter, verbose=True, convergence=None,
         params = optax.apply_updates(params, updates)
         steps_run = step
         if verbose:
-            logging.debug('parameters: %s', jax.tree.map(positive, jnp.array([
+            logging.debug('parameters: %s', jax.tree.map(positive_transform, jnp.array([
                 params["alpha"], params["beta"], params["gamma"],
                 params["delta"], params["epsilon"], params["theta"]
             ])))
-            logging.debug('omegas: %s', jax.tree.map(positive, params["omega"]))
+            logging.debug('omegas: %s', jax.tree.map(positive_transform, params["omega"]))
 
         if step < n_iter:
             current_loss, next_grad = loss_and_grad(params)
@@ -473,7 +473,7 @@ def compute_laplace_se(fn, params):
         Var(theta_i) ≈ 1 / H_ii,   H = -d²(log L)/dtheta²
 
     Standard errors in unconstrained (raw) space and on the natural scale are
-    both returned. For parameters transformed by positive(), the delta method
+    both returned. For parameters transformed by positive_transform(), the delta method
     gives se_natural = se_raw * exp(raw).
 
     Args:
@@ -506,7 +506,7 @@ def compute_laplace_se(fn, params):
     var_raw = jnp.where(hess_diag > 0, 1.0 / hess_diag, jnp.nan)
     se_raw = unflatten(jnp.sqrt(jnp.clip(var_raw, 0)))
 
-    # Delta method onto natural scale for positive()-transformed parameters.
+    # Delta method onto natural scale for positive_transform()-transformed parameters.
     se_natural = {k: se_raw[k] * jnp.exp(params[k]) for k in params}
 
     return se_raw, se_natural
@@ -519,11 +519,11 @@ def _log_laplace_summary(params, se_natural, *, omega_mode):
     logging.info("Laplace approximation (diagonal), estimates on natural scale:")
     for k in gtr_keys:
         if k in params:
-            est = float(positive(params[k]))
+            est = float(positive_transform(params[k]))
             se  = float(se_natural[k])
             logging.info("  %-8s: %.4f +/- %.4f", k, est, se)
     if "omega" in params:
-        omega = np.asarray(positive(params["omega"]))
+        omega = np.asarray(positive_transform(params["omega"]))
         se = np.asarray(se_natural["omega"])
         if omega_mode == "scalar":
             logging.info("  %-8s: %.4f +/- %.4f", "omega", float(omega), float(se))
@@ -543,7 +543,7 @@ def save_params(output_stem: str, params: dict, mask: np.ndarray = None,
     scalar_keys = SCALAR_PARAM_KEYS_WITH_ETA if omega_mode == "scalar" else GTR_PARAM_KEYS_WITH_ETA
     parameter_name = "Allparams" if omega_mode == "scalar" else "GTRparams"
     scalar_path = output_stem + f"_{parameter_name}.csv"
-    rows = [(k, float(positive(params[k]))) for k in scalar_keys if k in params]
+    rows = [(k, float(positive_transform(params[k]))) for k in scalar_keys if k in params]
     with open(scalar_path, "w", newline="") as f:
         w = _csv.writer(f)
         w.writerow(["variable", "value"])
@@ -556,7 +556,7 @@ def save_params(output_stem: str, params: dict, mask: np.ndarray = None,
         with open(omega_path, "w", newline="") as f:
             w = _csv.writer(f)
             w.writerow(["site", "omega_map", "variant"])
-            for i, (value, variant) in enumerate(zip(np.asarray(positive(params["omega"])), mask), start=1):
+            for i, (value, variant) in enumerate(zip(np.asarray(positive_transform(params["omega"])), mask), start=1):
                 w.writerow([i, float(value), int(variant)])
         logging.info("Saved per-site omega estimates to: %s", omega_path)
 
@@ -619,7 +619,7 @@ def _stack_chain_pytrees(chain_pytrees):
 
 
 def _posterior_draws_natural(raw_samples):
-    return {k: positive(v) for k, v in raw_samples.items()}
+    return {k: positive_transform(v) for k, v in raw_samples.items()}
 
 
 def summarize_posterior_samples(raw_samples, infos, *, omega_mode):
@@ -796,7 +796,7 @@ def _perturb_params(params, scale=0.5):
     return unflatten(flat + noise)
 
 
-def _run_replicates(fn, start_params, param_labels, n_reps, *, n_iter,
+def _run_map_replicates(fn, start_params, param_labels, n_reps, *, n_iter,
                     convergence=None, progress=True):
     """Run the optimizer n_reps times and return all results plus the index of the best.
 
@@ -891,7 +891,7 @@ def plot_replicates(all_params_list, best_idx):
 
     for i, params in enumerate(all_params_list):
         is_best = (i == best_idx)
-        vals = [float(positive(params[k])) for k in scalar_keys if k in params]
+        vals = [float(positive_transform(params[k])) for k in scalar_keys if k in params]
         ax.scatter(
             np.arange(len(vals)),
             vals,
@@ -941,7 +941,7 @@ def plot_likelihood_history(all_metadata, best_idx):
 
 def plot_per_site_omega(params, mask=None, *, domain_labels):
     """Plot per-site omega estimates, optionally coloured by domain labels."""
-    omega = np.asarray(positive(params["omega"]))
+    omega = np.asarray(positive_transform(params["omega"]))
     sites = np.arange(1, len(omega) + 1)
     fig, ax = plt.subplots(figsize=(12, 4))
     colours = np.full(len(omega), "black", dtype=object)
@@ -1023,7 +1023,7 @@ def _prepare_model(X, pi_eq, include_invariant, aggregate, prior_mode,
     #X[22,0] = 18
     #X = np.array(X[:,10:14])
     #X = np.array(X[:,0:15])
-    log_pi, pimat, pimatinv, pimult = transforms(X, pi_eq)
+    log_pi, pimat, pimatinv, pimult = prepare_likelihood_transforms(X, pi_eq)
     # l is length of alignment
     #print("X",X)
     #print("sum X", np.sum(X))
@@ -1031,7 +1031,7 @@ def _prepare_model(X, pi_eq, include_invariant, aggregate, prior_mode,
 
     # calculate mask for masking parts of the alignment where there is no diversity
     # this will allow using these position for calculating gradient for constant parameters but excludes omega calculation for these positions
-    mask = make_mask(X) # create mask for positions without diversity
+    mask = make_variable_site_mask(X) # create mask for positions without diversity
     #print("col_max",col_max)
     #print("col_sum",col_sum)
     #print("mask",mask)
@@ -1040,13 +1040,13 @@ def _prepare_model(X, pi_eq, include_invariant, aggregate, prior_mode,
     #print("mask where",mask2)
     #X = X[:,mask2] # this could be an alternative, where I filter X by positions that show diversity
     #print("X",X)
-    #log_pi, pimat, pimatinv, pimult = transforms(X, pi_eq)
+    #log_pi, pimat, pimatinv, pimult = prepare_likelihood_transforms(X, pi_eq)
     logging.info("Compiling model..Compiling.")
 
     base_params = make_base_params(
         n_sites=X.shape[1], estimate_eta=estimate_eta, omega_mode=omega_mode
     )
-    fn = make_fn(
+    fn = make_log_density_fn(
         pi_eq, log_pi, pimat, pimatinv, pimult, X, mask,
         include_invariant=include_invariant,
         aggregate=aggregate,
@@ -1077,7 +1077,7 @@ def run_map_optimizer(fn, start_params, mask, *, max_it,
             "check_every": convergence_check_every,
             "min_steps": convergence_min_steps,
         }
-    all_params, best_idx, all_metadata = _run_replicates(
+    all_params, best_idx, all_metadata = _run_map_replicates(
         fn, start_params, base_labels, fit_replicates, n_iter=max_it,
         convergence=convergence,
     )
@@ -1108,12 +1108,12 @@ def run_map_optimizer(fn, start_params, mask, *, max_it,
     save_params(result_stem, params, mask=mask, omega_mode=omega_mode)
     logging.info("Final log-likelihood: %.10f", best_metadata["objective"])
     scalar_estimates = {
-        key: float(positive(params[key]))
+        key: float(positive_transform(params[key]))
         for key in GTR_PARAM_KEYS_WITH_ETA
         if key in params
     }
     logging.info("Final scalar parameter estimates (natural scale): %s", scalar_estimates)
-    omega_estimates = np.asarray(positive(params["omega"]))
+    omega_estimates = np.asarray(positive_transform(params["omega"]))
     if omega_mode == "scalar":
         logging.info("Final dN/dS estimate: %.10g", float(omega_estimates))
     else:

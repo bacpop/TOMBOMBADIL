@@ -15,22 +15,22 @@ from tombombadil import sample
 from tombombadil.__main__ import main
 
 
-_run_replicates = sample._run_replicates
+_run_map_replicates = sample._run_map_replicates
 
 
-def _timed_run_replicates(*args, **kwargs):
+def _timed_run_map_replicates(*args, **kwargs):
     warmup_kwargs = dict(kwargs)
-    if "progress" in signature(_run_replicates).parameters:
+    if "progress" in signature(_run_map_replicates).parameters:
         warmup_kwargs["progress"] = False
 
     warmup_started = perf_counter()
-    warmup_result = _run_replicates(*args, **warmup_kwargs)
+    warmup_result = _run_map_replicates(*args, **warmup_kwargs)
     _block_until_ready(warmup_result)
     warmup_elapsed = perf_counter() - warmup_started
     print(f"MAP_WARMUP_SECONDS={warmup_elapsed:.6f}")
 
     started = perf_counter()
-    result = _run_replicates(*args, **kwargs)
+    result = _run_map_replicates(*args, **kwargs)
     _block_until_ready(result)
     elapsed = perf_counter() - started
     print(f"MAP_OPTIMIZATION_SECONDS={elapsed:.6f}")
@@ -44,7 +44,7 @@ def _block_until_ready(result):
             block()
 
 
-sample._run_replicates = _timed_run_replicates
+sample._run_map_replicates = _timed_run_map_replicates
 
 
 if __name__ == "__main__":

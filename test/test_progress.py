@@ -11,11 +11,11 @@ import optax
 from tombombadil import sample
 from tombombadil.__main__ import main
 from tombombadil.sample import _optimize_params
-from tombombadil.sample import _run_replicates
+from tombombadil.sample import _run_map_replicates
 from tombombadil.sample import likelihood_plot_path
 from tombombadil.sample import plot_likelihood_history
 from tombombadil.sample import plot_per_site_omega
-from tombombadil.sample import softplus_inverse
+from tombombadil.sample import positive_transform_inverse
 
 
 class TestMapProgressHistory(unittest.TestCase):
@@ -53,7 +53,7 @@ class TestMapProgressHistory(unittest.TestCase):
         with patch("tombombadil.sample.sys.stderr") as stderr:
             stderr.isatty.return_value = False
             with self.assertLogs(level="INFO") as captured:
-                _run_replicates(
+                _run_map_replicates(
                     fn,
                     params,
                     {"x": "scalar"},
@@ -103,7 +103,7 @@ class TestMapProgressHistory(unittest.TestCase):
     def test_omega_plot_starts_at_zero_and_keeps_one_guide_visible(self):
         params = {
             "omega": jnp.array(
-                [softplus_inverse(0.1), softplus_inverse(0.5)], dtype=jnp.float64
+                [positive_transform_inverse(0.1), positive_transform_inverse(0.5)], dtype=jnp.float64
             )
         }
         fig, ax = plot_per_site_omega(params, domain_labels=None)
@@ -119,7 +119,7 @@ class TestMapProgressHistory(unittest.TestCase):
     def test_omega_plot_upper_limit_tracks_observed_values_above_one(self):
         params = {
             "omega": jnp.array(
-                [softplus_inverse(0.1), softplus_inverse(2.0)], dtype=jnp.float64
+                [positive_transform_inverse(0.1), positive_transform_inverse(2.0)], dtype=jnp.float64
             )
         }
         fig, ax = plot_per_site_omega(params, domain_labels=None)
@@ -148,9 +148,9 @@ class TestMapProgressHistory(unittest.TestCase):
             os.chdir(tmp)
             try:
                 with patch(
-                    "tombombadil.sample.make_fn", return_value=lambda params: jnp.array(-1.0)
+                    "tombombadil.sample.make_log_density_fn", return_value=lambda params: jnp.array(-1.0)
                 ), patch(
-                    "tombombadil.sample._run_replicates",
+                    "tombombadil.sample._run_map_replicates",
                     side_effect=return_initial_params,
                 ):
                     fn, start_params, mask = sample._prepare_model(

@@ -12,21 +12,23 @@ import jax.numpy as jnp
 import optax
 
 from tombombadil.__main__ import configure_jax_for_options
-from tombombadil.__main__ import CODON_LIST
-from tombombadil.__main__ import estimate_pi_from_counts
-from tombombadil.__main__ import estimate_f3x4_frequencies_from_counts
-from tombombadil.__main__ import estimate_f3x4_pi_from_counts
 from tombombadil.__main__ import get_options
-from tombombadil.sample import make_fn
+from tombombadil.alignment import (
+    CODON_LIST,
+    count_codons,
+    estimate_f3x4_frequencies_from_counts,
+    estimate_f3x4_pi_from_counts,
+    estimate_pi_from_counts,
+)
+from tombombadil.sample import make_log_density_fn
 from tombombadil.sample import _optimize_params
 from tombombadil.sample import evaluate_fixed_params
 from tombombadil.sample import run_nuts_sampler
 from tombombadil.sample import save_params
 from tombombadil.sample import save_posterior_outputs
 from tombombadil.sample import summarize_posterior_samples
-from tombombadil.sample import transforms
-from tombombadil.sample import softplus_inverse
-from tombombadil.__main__ import count_codons
+from tombombadil.sample import prepare_likelihood_transforms
+from tombombadil.sample import positive_transform_inverse
 from tombombadil.sample import make_base_params
 from tombombadil.sample import prior_log_likelihood
 
@@ -170,10 +172,10 @@ class Testdiv(unittest.TestCase):
             X[15,:] = 4
             X[47,:] = 19
             pi_test = np.array([1/61 for i in range(61)])
-            log_pi, pimat, pimatinv, pimult = transforms(X, pi_test)
+            log_pi, pimat, pimatinv, pimult = prepare_likelihood_transforms(X, pi_test)
             mask = jnp.ones(1)
 
-            fn = make_fn(
+            fn = make_log_density_fn(
                 pi_test, log_pi, pimat, pimatinv, pimult, X, mask,
                 include_invariant=True,
                 aggregate="mean",
@@ -183,9 +185,9 @@ class Testdiv(unittest.TestCase):
                 omega_floor=True,
                 omega_mode="scalar",
             )
-            self.assertAlmostEqual(fn({"alpha": softplus_inverse(1), "beta": softplus_inverse(1), "gamma": softplus_inverse(1),
-                                    "delta": softplus_inverse(1), "epsilon": softplus_inverse(1), "eta": softplus_inverse(1),
-                                    "theta": softplus_inverse(0.5), "omega": jnp.array(softplus_inverse(0.5), dtype=jnp.float32)}),
+            self.assertAlmostEqual(fn({"alpha": positive_transform_inverse(1), "beta": positive_transform_inverse(1), "gamma": positive_transform_inverse(1),
+                                    "delta": positive_transform_inverse(1), "epsilon": positive_transform_inverse(1), "eta": positive_transform_inverse(1),
+                                    "theta": positive_transform_inverse(0.5), "omega": jnp.array(positive_transform_inverse(0.5), dtype=jnp.float32)}),
                                     jnp.array(-19.270576, dtype=jnp.float32), places=3)
 
 
@@ -290,13 +292,13 @@ class Test_codon_count_matrix(unittest.TestCase):
 class TestScalarOmegaOutput(unittest.TestCase):
     def test_save_params_writes_scalar_omega_only(self):
         params = {
-            "alpha": jnp.array(softplus_inverse(1), dtype=jnp.float64),
-            "beta": jnp.array(softplus_inverse(1), dtype=jnp.float64),
-            "gamma": jnp.array(softplus_inverse(1), dtype=jnp.float64),
-            "delta": jnp.array(softplus_inverse(1), dtype=jnp.float64),
-            "epsilon": jnp.array(softplus_inverse(1), dtype=jnp.float64),
-            "theta": jnp.array(softplus_inverse(0.5), dtype=jnp.float64),
-            "omega": jnp.array(softplus_inverse(0.5), dtype=jnp.float64),
+            "alpha": jnp.array(positive_transform_inverse(1), dtype=jnp.float64),
+            "beta": jnp.array(positive_transform_inverse(1), dtype=jnp.float64),
+            "gamma": jnp.array(positive_transform_inverse(1), dtype=jnp.float64),
+            "delta": jnp.array(positive_transform_inverse(1), dtype=jnp.float64),
+            "epsilon": jnp.array(positive_transform_inverse(1), dtype=jnp.float64),
+            "theta": jnp.array(positive_transform_inverse(0.5), dtype=jnp.float64),
+            "omega": jnp.array(positive_transform_inverse(0.5), dtype=jnp.float64),
         }
         with tempfile.TemporaryDirectory() as tmp:
             stem = os.path.join(tmp, "fit")
@@ -387,8 +389,8 @@ class TestOmegaModes(unittest.TestCase):
         self.pi = np.full(61, 1 / 61)
 
     def _fn(self, omega_mode, aggregate="sum", prior_mode="none"):
-        log_pi, pimat, pimatinv, pimult = transforms(self.X, self.pi)
-        return make_fn(
+        log_pi, pimat, pimatinv, pimult = prepare_likelihood_transforms(self.X, self.pi)
+        return make_log_density_fn(
             self.pi, log_pi, pimat, pimatinv, pimult, self.X,
             np.ones(self.X.shape[1]), include_invariant=True,
             aggregate=aggregate,
@@ -398,16 +400,16 @@ class TestOmegaModes(unittest.TestCase):
 
     def _params(self, omega):
         return {
-            "alpha": softplus_inverse(1.0), "beta": softplus_inverse(1.0),
-            "gamma": softplus_inverse(1.0), "delta": softplus_inverse(1.0),
-            "epsilon": softplus_inverse(1.0), "eta": softplus_inverse(1.0),
-            "theta": softplus_inverse(0.5), "omega": omega,
+            "alpha": positive_transform_inverse(1.0), "beta": positive_transform_inverse(1.0),
+            "gamma": positive_transform_inverse(1.0), "delta": positive_transform_inverse(1.0),
+            "epsilon": positive_transform_inverse(1.0), "eta": positive_transform_inverse(1.0),
+            "theta": positive_transform_inverse(0.5), "omega": omega,
         }
 
     def test_scalar_mode_uses_all_alignment_sites(self):
         fn = self._fn("scalar")
-        params = self._params(softplus_inverse(0.5))
-        vector_params = self._params(jnp.repeat(jnp.array(softplus_inverse(0.5)), 3))
+        params = self._params(positive_transform_inverse(0.5))
+        vector_params = self._params(jnp.repeat(jnp.array(positive_transform_inverse(0.5)), 3))
         expected = float(self._fn("per-site")(vector_params) - prior_log_likelihood(
             vector_params, 3, prior_mode="none", estimate_eta=False,
             omega_mode="per-site", aggregate="sum"
@@ -418,8 +420,8 @@ class TestOmegaModes(unittest.TestCase):
     def test_constant_per_site_likelihood_matches_scalar_without_prior(self):
         scalar = self._fn("scalar", aggregate="sum")
         vector = self._fn("per-site", aggregate="sum")
-        scalar_params = self._params(softplus_inverse(0.5))
-        vector_params = self._params(jnp.repeat(jnp.array(softplus_inverse(0.5)), 3))
+        scalar_params = self._params(positive_transform_inverse(0.5))
+        vector_params = self._params(jnp.repeat(jnp.array(positive_transform_inverse(0.5)), 3))
         self.assertAlmostEqual(float(scalar(scalar_params)), float(vector(vector_params)), places=5)
 
     def test_per_site_base_params_have_expected_shape(self):
@@ -434,7 +436,7 @@ class TestOmegaModes(unittest.TestCase):
 
     def test_per_site_prior_is_aggregated_over_sites(self):
         params = self._params(jnp.array([
-            softplus_inverse(0.25), softplus_inverse(0.5), softplus_inverse(1.0)
+            positive_transform_inverse(0.25), positive_transform_inverse(0.5), positive_transform_inverse(1.0)
         ]))
         summed = prior_log_likelihood(params, 3, prior_mode="stan_unconstrained",
                                       estimate_eta=False, omega_mode="per-site",
@@ -446,7 +448,7 @@ class TestOmegaModes(unittest.TestCase):
         self.assertTrue(bool(jnp.isfinite(mean)))
 
     def test_per_site_output_separates_omega_from_scalar_parameters(self):
-        params = self._params(jnp.repeat(jnp.array(softplus_inverse(0.5)), 3))
+        params = self._params(jnp.repeat(jnp.array(positive_transform_inverse(0.5)), 3))
         with tempfile.TemporaryDirectory() as tmp:
             stem = os.path.join(tmp, "fit")
             save_params(stem, params, mask=np.array([0, 1, 1]), omega_mode="per-site")
