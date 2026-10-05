@@ -7,7 +7,16 @@ Do not begin a backlog item merely because it appears in this file. Work only on
 # Current Status
 
 **Phase:** Likelihood optimisation
-**Status:** Complete — PERF-02
+**Status:** Complete — PERF-03
+
+PERF-03 is complete. Added reproducible site-batching benchmarks, resource guards,
+numerical gates and archived results. Retained production `vmap`: ordinary
+batching misses the improvement threshold; checkpointing cuts RSS 83.57% but
+slows the primary warm objective 13.76%. Capacity was demonstrated up to 29,400
+sites. All protected references pass (79 tests, 28 subtests); no production code
+or reference changed. An existing scalar gradient sensitivity is documented for
+PERF-04. See `test/perf03_results.md` and `test/benchmarks/perf03_results.json`.
+PERF-04 is queued and unstarted.
 
 PERF-02 is complete. `_gen_alpha_impl` now uses two static JAX loops while
 preserving its column arithmetic. Five fresh-process trials reduced median warm
@@ -16,7 +25,7 @@ warm objective time by 46.61% and peak RSS by 21.31%. All fixed numerical
 references and tolerances remain unchanged. The installed MAP confirmation and
 full suite pass (77 tests, 10 subtests). Reproduction, rejected alternatives,
 measurements, and limitations are in `test/perf02_results.md` and
-`test/benchmarks/perf02_results.json`. PERF-03 remains queued and unstarted.
+`test/benchmarks/perf02_results.json`.
 
 PERF-01 is complete. GTR construction now uses a compact static rate lookup,
 masked omega/diagonal updates, and broadcast frequency scaling. The selected
@@ -46,23 +55,24 @@ remain unchanged.
 
 # Current Task
 
-## PERF-02 — `_gen_alpha_impl`
+## PERF-03 — Site vectorisation
 
-Benchmark spectral reconstruction, diagonal frequency scaling, and column
-normalisation against revision `4273181`, retaining the PERF-01 GTR code.
-Require at least 5% faster median warm MAP runtime with no more than 5%
-regression in compilation-inclusive startup, larger-workload runtime, or peak
-RSS. Preserve all numerical references and existing JIT boundaries.
+Implement and benchmark site batching against revision `6de8aa6`, retaining
+PERF-01/02 arithmetic. Focus on the largest common feasible per-site workload:
+require at least 10% lower warm objective/gradient runtime OR 20% lower peak RSS,
+with no runtime regressions in startup, warm objectives, or small full MAP.
+Use three fresh processes, extending uncertain comparisons to five. Retain the
+baseline if no candidate qualifies. Preserve scalar and small per-site paths.
 
 ### Checklist
 
-- [x] Freeze baseline and implement reproducible benchmark alternatives.
-- [x] Gate alternatives on matrix, derivative, and protected reference checks.
-- [x] Screen kernels and scalar/per-site objectives at 294 and 2,940 sites.
-- [x] Compare finalists with five fresh-process MAP and three memory trials.
-- [x] Select qualifying production changes and confirm installed performance.
-- [x] Run protected tests, full suite, and diff checks.
-- [x] Record results, decisions, blockers, Session Log, and Next Task.
+- [x] Freeze baseline; inspect batching and reverse-mode shapes.
+- [x] Implement bounded benchmark runner and batching alternatives.
+- [x] Gate candidates on ordered losses, objectives, gradients and references.
+- [x] Screen batch sizes and compare larger workloads within resource limits.
+- [x] Select qualifying production policy, or document baseline retention.
+- [x] Run protected tests and full suite; no installation/MAP comparison needed after rejection.
+- [x] Record results, decisions, blockers, Session Log and Next Task.
 
 ### Guardrails
 
@@ -79,7 +89,9 @@ Performance comparisons must use comparable inputs, configuration, hardware, and
 
 # Next Task
 
-After PERF-02, continue with PERF-03 — Site vectorisation; do not start it automatically.
+After PERF-03, continue with PERF-04 — JIT coverage. Investigate the recorded
+scalar gradient sensitivity before accepting compilation changes. Do not start
+PERF-04 automatically.
 
 ---
 
@@ -686,11 +698,75 @@ substantially. A partial-unrolling experiment passed numerical screens but its
 eigensolver, jitter, priors, clipping semantics and optimizer controls are
 unchanged. Preserve the benchmark alternatives and numerical failures for
 future investigation of gradient sensitivity during PERF-04. PERF-03 onward
-and NUTS optimisation remain out of scope. No blockers remain.
+and NUTS optimisation were outside PERF-02 scope. No PERF-02 blockers remain.
+
+## PERF-03 benchmark protocol (2026-10-05)
+
+- Freeze the post-PERF-02 `sample.py` objective. Compare whole-site vmap,
+  sequential map, and map batches 16/64/256/1024; try checkpointed chunks if
+  reverse-mode storage limits scaling. Inspect shared GTR computations before
+  assuming they are repeated. Keep the site model and JIT boundaries intact.
+- CPU float64, NPROC=4, compilation cache disabled, serial fresh processes.
+  PorB3 repeated 1/10/30/100 times gives 294/2,940/8,820/29,400 sites. Use
+  initial and fitted parameters, scalar controls, five synchronized warm
+  objective/gradient evaluations, and separate first-call timing. Record source
+  and input hashes, environment, raw samples, medians/ranges and process RSS.
+- Limit probes to 12 GiB RSS and 600 seconds; conservatively preflight larger
+  runs rather than deliberately exhausting memory. Capacity gains are separate
+  from speed comparisons; use the largest size completed by both variants.
+- Keep full loss ordering, masking/reduction and the full-input prior once.
+  No padding, public tuning option, outer objective JIT, GPU or NUTS work.
+  Candidate policies leave scalar and <= max(512, batch-size) per-site inputs
+  on the existing path; none qualified for production.
+- Check heterogeneous omegas, asymmetric rates, jitter/frequency/eta/floor
+  choices, masks, reductions, priors and chunk/remainder boundaries. Force
+  small chunked checks so the small-input policy cannot hide differences.
+  Use repeated-input identities for independent large-input validation.
+- Require >=10% warm runtime improvement OR >=20% peak RSS improvement, no
+  runtime regressions (including startup and MAP), and <=5% other RSS
+  regressions. Extend ambiguous comparisons to five trials and use all valid
+  samples/unrounded medians. Rank by large-input runtime, then memory; prefer
+  no checkpointing on ties. Preserve all reference values and tolerances.
+
+**Outcome:** Graph inspection confirms that shared neutral GTR work remains
+unbatched, while reverse mode retains arrays such as `[61, N, 61, 61]`. Plain
+`lax.map` keeps residuals for all chunks; checkpointing removes them at a runtime
+cost. All four ordinary batch sizes and both checkpoint candidates match the
+2,940-site initial objective/gradient. Thirty forced model cases also pass.
+
+Five-trial decision: retain the existing production `vmap`. Batch 256 improves
+warm runtime only 0.76%, reduces RSS 2.10%, and regresses startup 5.52%.
+Checkpoint 64 reduces RSS 83.57% but increases warm runtime 13.76%; checkpoint
+256 reduces RSS 74.61% but increases warm runtime 17.63%. Both regress startup.
+No candidate meets the agreed gate. Alternatives remain under `test/`; full MAP
+candidate comparisons and production installation were not needed after the
+primary-gate rejection.
+
+Checkpoint 64 completes 8,820/29,400 sites at 1.052/0.888 GiB peak RSS and
+17.017/56.551 s warmed objective/gradient time (one capacity process each).
+Oversized baseline runs were preflight-skipped: even one saved residual exceeds
+12 GiB at 8,820 sites. Capacity gains do not imply a measured speedup over an
+unrun baseline. Scalar controls complete the full ladder within budget.
+
+All 35 per-site probes pass independent repeated-input checks (maximum error
+8.19e-12); eight scalar probes match their same-sized frozen baseline exactly.
+The extra scalar repeated-input gradient identity fails at larger sizes even in
+the frozen baseline, while data values scale correctly. At 2,940 sites the
+baseline alpha gradient is 128.253868 versus 129.248044 predicted by the identity.
+Keep these failures in the archive for PERF-04 investigation; their precise cause
+is not established here. No reference, tolerance or production behaviour changed.
+
+Validation: 79 tests and 28 subtests pass, including protected likelihood/gradient
+and full MAP references; two existing warnings. Benchmark help, compilation and
+diff checks pass. The report and JSON archive retain 58 probe reports, raw
+measurements, metadata, inspections, checks, skipped runs and limitations.
 
 # Blockers
 
-None.
+None for completed PERF-03. Before accepting PERF-04 compilation changes,
+investigate the existing scalar gradient sensitivity documented above and in
+`test/perf03_results.md`. Preserve the fixed numerical references during that
+investigation.
 
 For each blocker, record:
 
@@ -979,6 +1055,36 @@ MAP pilot. Keep references, tolerances, model behaviour and JIT scope unchanged.
 **Blockers:** None.
 
 **Next:** PERF-03 — Site vectorisation; do not start automatically.
+
+## 2026-10-05 — PERF-03 complete
+
+**Task:** Implement the approved site-batching benchmarks and optimisations.
+
+**Completed:**
+- Updated the plan before implementation and at handoff; pinned `6de8aa6`.
+- Added exact-baseline variants, resource-limited fresh-process runner, graph
+  inspection, numerical gates, analytic derivative tests and archive validation.
+- Screened sequential/ordinary/checkpointed maps; extended primary comparisons
+  to five trials. Retained baseline under the original acceptance criteria.
+- Checkpoint 64 saves 83.57% RSS but adds 13.76% warm runtime; ordinary batch 256
+  gains only 0.76% warm runtime and adds 5.52% startup. No candidate qualifies.
+- Completed capacity probes to 29,400 sites and fitted/scalar controls. Preserved
+  all 58 reports and independently validated 43 objective/gradient results.
+- `python -m pytest -q`: 79 passed, 28 subtests passed, two existing warnings,
+  112.86 s. Fixed likelihood/gradient and MAP references remain unchanged.
+- Recorded results in `test/perf03_results.md` and
+  `test/benchmarks/perf03_results.json`; production and user CSV/PDF outputs
+  remain untouched. Help, compilation and diff checks pass.
+
+**Decisions:** Keep alternatives in benchmarks; no production change meets the
+no-runtime-regression rule. Do not run full MAP candidate comparisons after
+failure of the primary gate. Record scalar repeated-gradient identity failures
+as pre-existing numerical sensitivity; same-sized scalar baselines match exactly.
+
+**Blockers/follow-up:** No PERF-03 blocker. Investigate the scalar sensitivity
+before accepting PERF-04 compilation changes; do not weaken references.
+
+**Next:** PERF-04 — JIT coverage; do not start automatically.
 
 ---
 
