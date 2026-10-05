@@ -6,8 +6,17 @@ Do not begin a backlog item merely because it appears in this file. Work only on
 
 # Current Status
 
-**Phase:** GTR optimisation
-**Status:** Complete — PERF-01
+**Phase:** Likelihood optimisation
+**Status:** Complete — PERF-02
+
+PERF-02 is complete. `_gen_alpha_impl` now uses two static JAX loops while
+preserving its column arithmetic. Five fresh-process trials reduced median warm
+MAP runtime by 5.30% and startup by 50.52%; three larger-workload probes reduced
+warm objective time by 46.61% and peak RSS by 21.31%. All fixed numerical
+references and tolerances remain unchanged. The installed MAP confirmation and
+full suite pass (77 tests, 10 subtests). Reproduction, rejected alternatives,
+measurements, and limitations are in `test/perf02_results.md` and
+`test/benchmarks/perf02_results.json`. PERF-03 remains queued and unstarted.
 
 PERF-01 is complete. GTR construction now uses a compact static rate lookup,
 masked omega/diagonal updates, and broadcast frequency scaling. The selected
@@ -16,7 +25,7 @@ with median warm MAP runtime 2.30% higher (within the agreed 5% limit). No
 sustained-throughput or memory improvement is claimed. All protected references
 remain unchanged. Benchmark commands, alternatives, raw measurements, and
 limitations are in `test/perf01_results.md` and
-`test/benchmarks/perf01_results.json`. PERF-02 remains queued and unstarted.
+`test/benchmarks/perf01_results.json`.
 
 MAINT-01 and MAINT-02 are complete. The CPU worker count now configures MAP and
 NUTS on the CPU backend; the full test suite and numerical references pass.
@@ -37,23 +46,23 @@ remain unchanged.
 
 # Current Task
 
-## PERF-01 — GTR operations
+## PERF-02 — `_gen_alpha_impl`
 
-Benchmark alternatives for GTR diagonal replacement, omega updates, frequency
-scaling, and rate assembly. Retain only measured improvements while preserving
-likelihood/gradient and pinned MAP references. Use CPU with four workers, kernel
-and objective/gradient screening, a 10x site-count probe, and repeated full MAP
-comparisons. PERF-02 and subsequent tasks are not part of this implementation.
+Benchmark spectral reconstruction, diagonal frequency scaling, and column
+normalisation against revision `4273181`, retaining the PERF-01 GTR code.
+Require at least 5% faster median warm MAP runtime with no more than 5%
+regression in compilation-inclusive startup, larger-workload runtime, or peak
+RSS. Preserve all numerical references and existing JIT boundaries.
 
 ### Checklist
 
-- [x] Capture the baseline and add reproducible benchmark variants and metadata.
-- [x] Verify static substitution mappings and add GTR value/derivative coverage.
-- [x] Screen individual approaches and combinations, including 2,940-site probes.
-- [x] Compare baseline and finalists in repeated fresh-process MAP runs.
-- [x] Select production changes using measured runtime and startup results.
-- [x] Run protected numerical tests, the full suite, CLI help, and diff checks.
-- [x] Record measurements, decisions, blockers, Session Log, and Next Task.
+- [x] Freeze baseline and implement reproducible benchmark alternatives.
+- [x] Gate alternatives on matrix, derivative, and protected reference checks.
+- [x] Screen kernels and scalar/per-site objectives at 294 and 2,940 sites.
+- [x] Compare finalists with five fresh-process MAP and three memory trials.
+- [x] Select qualifying production changes and confirm installed performance.
+- [x] Run protected tests, full suite, and diff checks.
+- [x] Record results, decisions, blockers, Session Log, and Next Task.
 
 ### Guardrails
 
@@ -70,7 +79,7 @@ Performance comparisons must use comparable inputs, configuration, hardware, and
 
 # Next Task
 
-After PERF-01, continue with PERF-02 — `_gen_alpha_impl`; do not start it automatically.
+After PERF-02, continue with PERF-03 — Site vectorisation; do not start it automatically.
 
 ---
 
@@ -632,6 +641,53 @@ variants, and reproduction commands are retained with the benchmark report.
 Two initial pilots were excluded and replaced because the runner initially
 configured logging too late to capture startup timing and enable progress logs.
 
+### 2026-10-05 — PERF-02 measurement protocol
+
+**Decision:** Compare broadcast spectral scaling, matrix multiplication/einsum
+reconstruction, static-loop fallback, frequency broadcasting, and vectorised
+column normalisation individually and in promising combinations. Use exact
+baseline likelihood source from `4273181` and current GTR for every variant.
+
+CPU/four workers/float64, no persistent compilation cache; synchronised kernel
+samples (five batches of 100), actual optimizer value-and-gradient boundary
+(no extra outer JIT), scalar/per-site 294/2,940-site probes. Full MAP uses one
+warm-up plus one timed pass with 500 maximum steps and convergence 1e-6/5/10/50.
+Use three rotated fresh-process MAP trials and three larger per-site memory
+trials (first plus five warm evaluations); extend borderline comparisons to
+five. Throughput must improve at least 5%, with startup/larger-runtime/RSS
+regressions capped at 5%. Startup-only wins do not qualify. Preserve protected
+references, clipping semantics, eigensolver, jitter, and JIT boundaries.
+
+**Screening:** Initial matmul/einsum reconstruction and broadcast normalisation
+fail the unchanged protected gradient reference at symmetric initial parameters.
+They are excluded, not accommodated by changing references. Scale-only,
+frequency-only, and static reconstruction loops pass the one-site check.
+The real per-site objective rejects spectral broadcasting and all combinations
+containing it (gradient differences up to 0.82); explicit-reduction vmap also
+fails the one-site check. Static normalization loops pass. Both static loops
+together, with and without frequency broadcasting, pass the real per-site
+gradient screen. The initial both-loops probe improves warm
+objective time by 8%. Five full MAP trials select both static loops: median
+warm runtime 86.538 to 81.955 s (5.30% improvement), startup 3.157 to 1.562 s
+(50.52%), larger-probe runtime 7.547 to 4.030 s (46.61%), peak RSS 11.642 to
+9.161 GB (21.31%). Production now uses these two loops with original spectral
+and frequency arithmetic. Installed numerical checks and MAP confirmation pass: startup 1.690 s,
+warm MAP 83.049 s, 210 steps, unchanged fixed outputs. Full suite: 77 tests and
+10 subtests pass, with the same two dependency warnings. CLI/benchmark help and
+diff checks pass.
+
+**Decision:** Retain the two static loops. The measured warm gain (5.30%) passes
+the agreed 5% threshold after extending from three to five trials; individual
+ranges overlap, and no valid trial was excluded. Both startup and memory improve
+substantially. A partial-unrolling experiment passed numerical screens but its
+90.950 s MAP pilot offered no warmed-throughput benefit and was rejected.
+
+**Consequences:** Public interfaces, profiler annotations, JIT boundaries,
+eigensolver, jitter, priors, clipping semantics and optimizer controls are
+unchanged. Preserve the benchmark alternatives and numerical failures for
+future investigation of gradient sensitivity during PERF-04. PERF-03 onward
+and NUTS optimisation remain out of scope. No blockers remain.
+
 # Blockers
 
 None.
@@ -893,6 +949,36 @@ function naming, and JAXopt warning investigation
 **Blockers:** None for PERF-01.
 
 **Next:** PERF-02 — `_gen_alpha_impl`; do not start automatically.
+
+
+## 2026-10-05 — PERF-02 complete
+
+**Task:** Benchmark and optimise `_gen_alpha_impl` using the approved plan.
+
+**Completed:**
+- Updated Current Task, checklist, and protocol before implementation.
+- Added exact-baseline benchmark loading, nineteen alternatives, numerical
+  screening, kernel/objective/MAP/memory modes, metadata, and recorded results.
+- Added five independent alpha-matrix/derivative/normalization tests.
+- Rejected numerically incompatible contractions, broadcasting, and vmap;
+  retained the two static loops after five MAP trials and three memory trials.
+- Warm MAP median 86.538 to 81.955 s (5.30% faster); startup 3.157 to 1.562 s
+  (50.52% lower); large warm objective 7.547 to 4.030 s (46.61% lower); peak RSS
+  11.642 to 9.161 GB (21.31% lower).
+- Installed MAP confirmation: 1.690 s startup, 83.049 s warmed optimizer,
+  210 steps; objective, GTR and all omega references pass unchanged.
+- `python -m pytest -q`: 77 passed, 10 subtests passed, two existing dependency
+  warnings, 115.14 s. CLI/benchmark help, compilation and diff checks pass.
+- Updated `test/perf02_results.md`, `test/benchmarks/perf02_results.json`,
+  Current Status, Design Notes, blockers, and this handoff.
+
+**Decisions:** Extend borderline/variable MAP comparisons to five trials; use
+all valid trials and unrounded medians. Reject partial unrolling after its slow
+MAP pilot. Keep references, tolerances, model behaviour and JIT scope unchanged.
+
+**Blockers:** None.
+
+**Next:** PERF-03 — Site vectorisation; do not start automatically.
 
 ---
 
