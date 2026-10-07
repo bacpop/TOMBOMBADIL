@@ -340,68 +340,7 @@ def main():
     else:
         raise ValueError(f"Unsupported --pi mode: {options.pi}")
 
-    if options.diagnostic_fixed_params:
-        if options.omega_mode != 'scalar':
-            raise ValueError('--diagnostic-fixed-params currently supports only --omega-mode scalar')
-        from .sample import evaluate_fixed_params
-
-        diagnostic_params = {
-            "alpha": options.diagnostic_alpha,
-            "beta": options.diagnostic_beta,
-            "gamma": options.diagnostic_gamma,
-            "delta": options.diagnostic_delta,
-            "epsilon": options.diagnostic_epsilon,
-            "eta": options.diagnostic_eta,
-            "theta": options.diagnostic_theta,
-            "omega": options.diagnostic_omega,
-        }
-        value = evaluate_fixed_params(
-            X, pi, diagnostic_params,
-            include_invariant=not options.exclude_invariant,
-            aggregate=options.diagnostic_aggregate,
-            prior_mode=options.diagnostic_prior_mode,
-            estimate_eta=not options.diagnostic_fix_eta,
-            eigen_jitter=options.diagnostic_enable_jitter,
-            omega_floor=options.diagnostic_enable_omega_floor,
-            omega_mode=options.omega_mode,
-        )
-        print(f"Diagnostic scalar-GTR objective: {value:.10f}")
-        return
-
-    from .sample import run_sampler
-
-    domain_labels = None
-    if options.domains is not None:
-        if options.omega_mode != 'per-site':
-            raise ValueError('--domains requires --omega-mode per-site')
-        if options.reference is None:
-            raise ValueError('--reference is required when --domains is specified')
-        from .domains import parse_domain_labels
-        domain_labels = parse_domain_labels(options.domains, options.alignment,
-                                            options.reference, X.shape[1])
-
-    run_sampler(X, pi, options.sample_it, options.platform, options.cpus,
-                estimate_uncertainty=options.estimate_uncertainty,
-                fit_replicates=options.fit_replicates,
-                include_invariant=not options.exclude_invariant,
-                output=options.output_jax,
-                aggregate=options.objective_aggregate,
-                prior_mode=options.prior_mode,
-                estimate_eta=not options.fix_eta,
-                fit_until_convergence=options.fit_until_convergence,
-                convergence_tol=options.convergence_tol,
-                convergence_patience=options.convergence_patience,
-                convergence_check_every=options.convergence_check_every,
-                convergence_min_steps=options.convergence_min_steps,
-                fit_method=options.fit_method,
-                num_warmup=options.num_warmup,
-                num_samples=options.num_samples,
-                num_chains=options.num_chains,
-                rng_seed=options.rng_seed,
-                target_acceptance_rate=options.target_acceptance_rate,
-                nuts_chain_mode=options.nuts_chain_mode,
-                omega_mode=options.omega_mode,
-                domain_labels=domain_labels)
+    
 
 if __name__ == "__main__":
     main()
