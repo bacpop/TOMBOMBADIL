@@ -7,7 +7,17 @@ Do not begin a backlog item merely because it appears in this file. Work only on
 # Current Status
 
 **Phase:** Likelihood optimisation
-**Status:** Complete — PERF-04
+**Status:** Complete — PERF-05
+
+PERF-05 is complete. Added CPU sharding/chunk-local candidates, numerical gates,
+bounded benchmarks, experimental alternating schedules and archived evidence.
+Retained production baseline: valid sharding finalists regress runtime, while
+chunk-local/compiled candidates fail the protected gradient oracle. Serial 5:20
+reaches objective tolerance from all three starts but takes median 266.15 s
+versus baseline cold-fit 115.91 s; parallel omega reaches the 600 s time limit.
+Final validation passes 87 tests and 73 subtests. Production and fixed references
+are unchanged. See `test/perf05_results.md`, `test/benchmarks/perf05_results.json`
+and `test/benchmarks/perf05_convergence.png`.
 
 PERF-04 is complete. Added reproducible JIT candidates, numerical diagnostics,
 bounded benchmarks and archived evidence. Retained production baseline: broader
@@ -15,7 +25,7 @@ likelihood compilation fails numerical gates; update-only JIT passes correctness
 but median full MAP is 1.15% slower, large objective/gradient 2.86% slower and RSS
 0.62% higher. All protected references remain unchanged. The full suite passes
 (82 tests, 32 subtests). See `test/perf04_results.md` and
-`test/benchmarks/perf04_results.json`. PERF-05 remains unstarted.
+`test/benchmarks/perf04_results.json`.
 
 PERF-03 is complete. Added reproducible site-batching benchmarks, resource guards,
 numerical gates and archived results. Retained production `vmap`: ordinary
@@ -62,23 +72,24 @@ remain unchanged.
 
 # Current Task
 
-## PERF-04 — JIT coverage
+## PERF-05 — CPU MAP parallelism and scaling
 
-Completed the approved numerical investigation and JIT benchmark plan against
-`0962b3e2e9f5d30af083165e797189f3bb731cf0`. Require >=5% faster full MAP,
->=10% faster largest common objective/gradient workload, OR >=20% lower peak RSS;
-allow no runtime regressions (including startup) and <=5% other RSS regressions.
-References/tolerances are unchanged; no candidate qualifies, so baseline is retained.
+Completed the approved benchmark plan against
+`c9762e18c101102e487b417e558f51ba09384aa8`. Joint-Adam candidates require >=5%
+complete MAP speedup, >=10% large-objective speedup OR >=20% lower RSS, with no
+runtime regression and <=5% other RSS regression. Alternating shared/omega
+optimisation remains experimental regardless of its results.
 
 ### Checklist
 
-- [x] Freeze baseline and reproduce/localise numerical sensitivity.
-- [x] Implement isolated update, objective/gradient and combined candidates.
-- [x] Gate actual candidate kernels, updates and trajectories numerically.
-- [x] Run bounded objective/step/MAP benchmarks and repeat finalists.
-- [x] Select a qualifying change or document baseline retention.
-- [x] Run protected tests, full suite and applicable installed confirmation.
-- [x] Record results, Design Notes, blockers, Session Log and Next Task.
+- [x] Read controls, freeze baseline and record approved protocol before changes.
+- [x] Implement site sharding, bounded local gradients and combined candidates.
+- [x] Implement experimental alternating rounds and behavioural tests.
+- [x] Gate actual kernels and trajectories numerically.
+- [x] Run bounded CPU benchmarks, controls and finalist repeats.
+- [x] Select a qualifying joint candidate or retain production baseline.
+- [x] Run protected/full tests and applicable installed confirmation.
+- [x] Archive evidence and finalize all plan sections.
 
 ### Guardrails
 
@@ -95,9 +106,8 @@ Performance comparisons must use comparable inputs, configuration, hardware, and
 
 # Next Task
 
-PERF-05 — MAP parallelism and scaling. Start with a benchmarking plan when
-requested; do not start automatically. Carry forward the documented numerical
-gates and alpha-pullback sensitivity when considering compilation or sharding.
+Review PERF-05 results and choose any follow-up explicitly. No further
+optimisation or Later Tidy Up work is authorised automatically.
 
 ---
 
@@ -307,9 +317,14 @@ Consider compilation boundaries as well as steady-state execution performance.
 
 ### PERF-05 — MAP parallelism and scaling
 
-Investigate explicit parallelism for MAP/Adam optimisation. Consider adding sharding.
+Investigate explicit parallelism for MAP/Adam optimisation. Consider adding sharding, reference: `https://docs.jax.dev/en/latest/201/shard-map.html#psum`.
 
-The design should consider eventual workloads with approximately one million sites and potential GPU execution.
+The design should consider eventual workloads with approximately one million sites and potential GPU execution, but for this round testing will remain focused on CPU only loads.
+
+Consider an optimisation approach which updates shared parameters (GTR
+parameters) in one short round, then parallelises over omegas in a second longer
+round. This could be iterated between the two stages, and GTR parameters
+likely needing fewer iterations as they are well informed from the data.
 
 ---
 
@@ -842,21 +857,87 @@ pass. Production and fixed references are unchanged, so no separate installed
 candidate confirmation is applicable; the normal production MAP integration
 test passes in the full suite.
 
+## PERF-05 implementation protocol (2026-10-07)
+
+- Frozen baseline plus site sharding, chunk-local value/gradients (64/256 sites),
+  and their combination. Test 1/2/4 logical CPU devices with NPROC=4, float64,
+  disabled persistent cache; configure before importing JAX.
+- Shared parameters are replicated; counts/masks/omegas are partitioned. Reduce
+  shared gradients, retain omega order, handle finite padding explicitly, apply
+  full-input normalization and one prior. Differentiate inside bounded chunks.
+- Experimental schedules: 1 shared + 5 omega or 5 shared + 20 omega updates.
+  Independent Adam moments/counters, existing cosine schedule on each block's
+  own 500-update horizon, max 500 total block updates. Freeze inactive blocks.
+  Standard start plus two NumPy seed-0 perturbations (raw SD 0.5).
+- Gate direct kernels, protected oracle, ordered losses, all gradient leaves,
+  three updates/state trajectories, masked/remainder/floor/prior cases. Preserve
+  rtol=1e-6/atol=1e-8 and every fixed reference. Reject failed candidates before
+  adoption timing; keep diagnostics. Scalar controls use same-size baselines.
+- PorB3 ladder 294/2940/8820/29400, initial/fitted controls. Serial fresh processes,
+  12 GiB total process RSS and 600 s/probe, allocation/time preflight, all skips
+  archived. First call + five synchronized warm calls; carry state for steps.
+- MAP warmup + timed complete fit with 500/1e-6/5/10/50 settings; record raw startup
+  and placement-inclusive timing. Three fresh finalist trials, five if uncertain
+  or regressing; all valid samples retained. Repeat apparent control regressions.
+- Alternating runs compare complete objective versus wall time, time to joint
+  endpoint quality, parameter discrepancies and gradient norms; independently
+  reevaluate endpoints. Repeat strongest experimental schedule three times.
+- CPU only; million-site memory/time estimates are projections. No GPU/NUTS,
+  parallel restarts, derivative repairs, reference changes or public tuning flags.
+  Retain baseline if no joint candidate qualifies. Any installed candidate keeps
+  scalar/small (<2940 sites) baseline policy and validated device configurations.
+- At handoff archive reports, hashes, failures, skips, decisions, limitations,
+  full-suite validation and a clear next task. Preserve existing user outputs.
+- Final full-suite milestone: 87 tests and 73 subtests pass (220.06 s); protected
+  numerical references and production files remain unchanged.
+- Alternating milestone: 5:20 reaches baseline endpoint objective tolerance from
+  all three fixed starts; 1:5 does so from one. Select 5:20 for fresh-process
+  standard-start repeats and the separately gated parallel-omega pilot. Check
+  the actual chosen schedule's two-cycle trajectory, not just 1:5.
+
+## PERF-05 measured outcomes (2026-10-07)
+
+- Retain production baseline. Of fourteen changed candidate/device screens,
+  plain sharding passes on 1/2/4 devices; eight chunk-local and three compiled
+  configurations fail the protected one-site gradient oracle. Initial/fitted
+  294-site chunk diagnostics pass, but do not override that invariant.
+- Five fresh 2,940-site trials give median warm gradients 3.990298 s baseline,
+  12.208023 s with two-device sharding and 12.646882 s with four devices.
+  First-call medians are 4.600972/10.702522/12.230582 s; RSS medians are
+  8.778/10.793/10.471 GiB. Reject the finalists on runtime; no candidate MAP
+  installation is justified. Retain every valid trial, including variable
+  baseline timings. Oversized 8,820/29,400-site graphs are preflight-skipped.
+- Serial 5:20 reaches baseline endpoint objective tolerance at all three fixed
+  starts; 1:5 does so at one. Three standard-start trials give median 5:20
+  266.152 s versus baseline cold-fit 115.912 s. Its endpoint gradient norm is
+  0.024257 versus 0.000166 for baseline; objective agreement is not equivalent
+  convergence. Both schedules remain experimental.
+- The 2,940-site 50-update diagnostics take 401.886 s / 6.918 GiB (1:5) and
+  367.559 s / 6.902 GiB (5:20), with large residual gradients. No converged
+  larger-input or million-site performance is claimed.
+- A stronger four-device test exposed incompatible prior/likelihood placement
+  after shared updates. Fixed only the experimental phase boundary by replicating
+  inputs before the parallel objective; transfer costs remain timed. Both
+  schedules pass analytic tests, and the selected two-device 5:20 partial-gradient
+  and two-cycle scientific comparisons match exactly. Earlier harness errors
+  are development diagnostics, not scientific acceptance failures.
+- The parallel-omega pilot hits the 600 s worker limit. Its last completed cycle
+  records 125 updates at 532.407 s and objective -1071.797795288, outside tolerance.
+  Preserve the incomplete history; no finalist repeats or speedup claim apply.
+- Preserve the first connection-interrupted 5:20 checkpoint separately and
+  exclude it from complete-trial statistics. A later server restart left the
+  campaign alive; verified it and continued without duplicate timing runs.
+- Million-site counts/omega/Adam/residual sizes and linear timing are arithmetic
+  projections only. Logical CPU sharding shares host RAM; bounded differentiation
+  and a separate numerical-correctness investigation remain future possibilities.
+
 # Blockers
 
-No implementation blocker for PERF-04: baseline retention is the approved
-outcome when no candidate qualifies. Follow-up: broader likelihood compilation
-fails protected numerical gates. The alpha reverse-path sensitivity around
-near-degenerate eigenvalues requires a separate numerical-correctness proposal
-before changing protected references; no such change is included in this task.
-
-For each blocker, record:
-
-- affected task
-- problem
-- information or action required to unblock it
-
-Remove resolved blockers from this section once their resolution has been captured in the Session Log or Design Notes.
+No PERF-05 implementation blocker. Broader compilation and chunk-local gradients
+fail the protected one-site numerical gate. Repairing the alpha reverse path or
+changing expected numerical behaviour requires a separate correctness proposal
+and independent validation; no such change is included here. No GPU or
+million-site execution has been validated.
 
 ---
 
@@ -1197,6 +1278,51 @@ only an optimisation meeting the approved acceptance criteria.
 **Blockers/follow-up:** No PERF-04 blocker. Any repair of the alpha derivative
 requires a separate correctness proposal and independent validation.
 **Next:** PERF-05 benchmarking plan, only when requested.
+
+---
+
+## 2026-10-07 — PERF-05 implementation started
+
+**Task:** CPU MAP parallelism/scaling and experimental alternating optimisation.
+**Started:** Read AGENTS.md, plan.md and existing benchmark helpers; recorded the
+approved protocol and checklist before implementation.
+**Blockers:** PERF-04 alpha reverse-path sensitivity may reject wider compilation;
+no derivative fix or tolerance change is authorised.
+**Next:** Implement candidates, direct numerical gates and bounded experiments.
+
+---
+
+## 2026-10-07 — PERF-05 profiling resumed after interruption
+
+Confirmed no benchmark worker remained. Preserved the incomplete 5:20 trial
+(425 updates) separately with interrupted status; it is excluded from completed
+trial statistics. Restarting that schedule from identical initial parameters,
+retaining completed numerical screens, controls and timing trials.
+
+A subsequent server restart left the campaign running. Verified the live worker
+and continued monitoring it; no completed measurements were repeated.
+
+---
+
+## 2026-10-07 — PERF-05 completed
+
+**Task:** CPU MAP parallelism/scaling and experimental alternating optimisation.
+**Completed:** Implemented reproducible sharding, compiled-sharding, local-gradient
+and combined candidates; tested fourteen candidate/device configurations against
+unchanged numerical gates. Retained baseline after five-trial sharding finalist
+regressions. Compared both alternating schedules over three fixed starts,
+repeated 5:20 and baseline three times, completed bounded larger-input probes,
+and retained the slower parallel-omega timeout. Fixed an experimental placement
+boundary exposed by the stronger four-device trajectory tests.
+**Evidence:** Archived 71 reports, 25 validated objective comparisons, source
+hashes, failures/skips/interruption/timeout histories, validation logs and a
+convergence plot. See `test/perf05_results.md` and `test/benchmarks/perf05_results.json`.
+**Validation:** Final full suite: 87 tests, 73 subtests (220.06 s). Explicit
+four-device tests: 5 tests, 41 subtests. Scientific parallel 5:20 partial gradients
+and two-cycle trajectory match exactly. Production/fixtures/tolerances unchanged;
+CLI help, compilation, source hashes and diff checks pass.
+**Blockers:** None for PERF-05. Numerical sensitivity remains a separate follow-up.
+**Next:** Review results and explicitly select further work; no automatic task.
 
 ---
 
