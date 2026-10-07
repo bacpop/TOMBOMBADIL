@@ -7,7 +7,15 @@ Do not begin a backlog item merely because it appears in this file. Work only on
 # Current Status
 
 **Phase:** Likelihood optimisation
-**Status:** Complete — PERF-03
+**Status:** Complete — PERF-04
+
+PERF-04 is complete. Added reproducible JIT candidates, numerical diagnostics,
+bounded benchmarks and archived evidence. Retained production baseline: broader
+likelihood compilation fails numerical gates; update-only JIT passes correctness
+but median full MAP is 1.15% slower, large objective/gradient 2.86% slower and RSS
+0.62% higher. All protected references remain unchanged. The full suite passes
+(82 tests, 32 subtests). See `test/perf04_results.md` and
+`test/benchmarks/perf04_results.json`. PERF-05 remains unstarted.
 
 PERF-03 is complete. Added reproducible site-batching benchmarks, resource guards,
 numerical gates and archived results. Retained production `vmap`: ordinary
@@ -16,7 +24,6 @@ slows the primary warm objective 13.76%. Capacity was demonstrated up to 29,400
 sites. All protected references pass (79 tests, 28 subtests); no production code
 or reference changed. An existing scalar gradient sensitivity is documented for
 PERF-04. See `test/perf03_results.md` and `test/benchmarks/perf03_results.json`.
-PERF-04 is queued and unstarted.
 
 PERF-02 is complete. `_gen_alpha_impl` now uses two static JAX loops while
 preserving its column arithmetic. Five fresh-process trials reduced median warm
@@ -55,24 +62,23 @@ remain unchanged.
 
 # Current Task
 
-## PERF-03 — Site vectorisation
+## PERF-04 — JIT coverage
 
-Implement and benchmark site batching against revision `6de8aa6`, retaining
-PERF-01/02 arithmetic. Focus on the largest common feasible per-site workload:
-require at least 10% lower warm objective/gradient runtime OR 20% lower peak RSS,
-with no runtime regressions in startup, warm objectives, or small full MAP.
-Use three fresh processes, extending uncertain comparisons to five. Retain the
-baseline if no candidate qualifies. Preserve scalar and small per-site paths.
+Completed the approved numerical investigation and JIT benchmark plan against
+`0962b3e2e9f5d30af083165e797189f3bb731cf0`. Require >=5% faster full MAP,
+>=10% faster largest common objective/gradient workload, OR >=20% lower peak RSS;
+allow no runtime regressions (including startup) and <=5% other RSS regressions.
+References/tolerances are unchanged; no candidate qualifies, so baseline is retained.
 
 ### Checklist
 
-- [x] Freeze baseline; inspect batching and reverse-mode shapes.
-- [x] Implement bounded benchmark runner and batching alternatives.
-- [x] Gate candidates on ordered losses, objectives, gradients and references.
-- [x] Screen batch sizes and compare larger workloads within resource limits.
-- [x] Select qualifying production policy, or document baseline retention.
-- [x] Run protected tests and full suite; no installation/MAP comparison needed after rejection.
-- [x] Record results, decisions, blockers, Session Log and Next Task.
+- [x] Freeze baseline and reproduce/localise numerical sensitivity.
+- [x] Implement isolated update, objective/gradient and combined candidates.
+- [x] Gate actual candidate kernels, updates and trajectories numerically.
+- [x] Run bounded objective/step/MAP benchmarks and repeat finalists.
+- [x] Select a qualifying change or document baseline retention.
+- [x] Run protected tests, full suite and applicable installed confirmation.
+- [x] Record results, Design Notes, blockers, Session Log and Next Task.
 
 ### Guardrails
 
@@ -89,9 +95,9 @@ Performance comparisons must use comparable inputs, configuration, hardware, and
 
 # Next Task
 
-After PERF-03, continue with PERF-04 — JIT coverage. Investigate the recorded
-scalar gradient sensitivity before accepting compilation changes. Do not start
-PERF-04 automatically.
+PERF-05 — MAP parallelism and scaling. Start with a benchmarking plan when
+requested; do not start automatically. Carry forward the documented numerical
+gates and alpha-pullback sensitivity when considering compilation or sharding.
 
 ---
 
@@ -761,12 +767,88 @@ and full MAP references; two existing warnings. Benchmark help, compilation and
 diff checks pass. The report and JSON archive retain 58 probe reports, raw
 measurements, metadata, inspections, checks, skipped runs and limitations.
 
+## PERF-04 implementation protocol (2026-10-06)
+
+- Reproduce outer-JIT and scalar repeated-input differences on the frozen source;
+  inspect matrices, spectra, intermediate derivatives and compiler output. Use
+  finite-difference sweeps diagnostically. Numerical fixes requiring changed
+  references need a separate proposal; no such changes are authorised here.
+- Compare baseline, JIT update/apply, JIT value-and-gradient, differentiation of
+  JIT objective, separate compiled kernels, and a fused numerical step. Keep
+  Python convergence/logging/history and exact initial/final evaluation order.
+  Gate the actual candidate kernel, not an unchanged test execution path.
+- Use initial/fitted/asymmetric parameters, both omega modes, 294/2,940 sites;
+  larger ladder points only when conservative allocation preflight permits.
+  Reuse CPU/x64/NPROC=4, disabled persistent cache, 12 GiB and 600-second guards.
+- Separate cold and five synchronized warm calls; carry state in step probes.
+  Compare complete MAP warmup/timed invocations with pinned 500/5/10/50 settings.
+  Include any fit-construction recompilation; do not add benchmark-only caches.
+- Three fresh processes, extending uncertain/regressing comparisons to five.
+  Require >=5% MAP speed OR >=10% large-objective speed OR >=20% peak-RSS gain,
+  no runtime regression and <=5% other RSS regression. Rank by large-objective
+  speed, then MAP, memory and simplicity. No qualifier means baseline retention.
+- No public knobs, whole-loop JIT, donation, checkpointing, sharding, GPU or
+  eigensolver/custom-derivative production changes. PERF-05 remains unstarted.
+
+Initial numerical decision: the protected one-site case rejects differentiation
+of a compiled objective (maximum difference 1.04e-5). Compiling value-and-gradient
+passes that case but fails the 294-site symmetric per-site case (1.41e-5), as do
+separate/fused likelihood-compilation candidates. Keep those failures as evidence;
+do not benchmark them for adoption. Update-only JIT passes all eight model cases
+and three-step parameter/state/gradient trajectories, so it proceeds to timing.
+Spectral inspection finds a gap near machine precision after identity jitter;
+asymmetric rates remove that near-degeneracy. Protected references stay fixed.
+
+## PERF-04 selection and evidence (2026-10-06)
+
+Retain production baseline. Five fresh-process full-MAP comparisons give median
+106.480551 s baseline versus 107.703812 s update-only JIT (+1.15%). All ten trials
+pass fixed objective/GTR/294-omega references and converge at 210 steps. At
+2,940 sites, five-process median warm objective/gradient time is 6.045230 s versus
+6.217870 s (+2.86%); peak process RSS is 6.583221 versus 6.624222 GiB (+0.62%).
+No improvement threshold is met. The isolated update kernel improves from about
+1.65 ms to 0.10 ms and cold startup improves at least 10.80%, but neither
+qualifies without the required complete-MAP/objective/memory benefit.
+
+Keep all valid timings, including the variable early pair. Full-invocation
+timings are unrounded throughout; early millisecond-formatted startup records
+receive +/-0.0005 s bounds. Later probes capture raw log arguments. Fit kernels
+are reconstructed for each warmup/timed invocation, preserving real recompilation
+cost, and reused across replicates within a fit with fresh optimizer state.
+
+The archive retains 46 reports (38 completed, four numerical rejections, four
+preflight skips) and validates all 20 objective reports, including initial/fitted
+per-site and scalar controls at 294/2,940 sites. Larger 8,820/29,400-site objective
+probes exceed the conservative 12 GiB allocation budget for both surviving
+variants; update-only JIT leaves the AD residual graph unchanged.
+
+The alpha pullback differs for the same cotangent by 4.40e-5 between eager and
+compiled execution at symmetric rates, versus 2.01e-14 at asymmetric rates.
+Scaling the eager cotangent by ten deviates from linearity by 7.94e-4 versus
+4.72e-13 for the asymmetric control. Together with the spectrum/finite-difference
+diagnostics this localises sensitivity near repeated eigenvalues, without
+claiming an exact compiler cause. A derivative/model correctness proposal is
+separate work; no eigensolver, jitter or reference changes are made here.
+
+Reproduction, protocol, limitations and raw evidence are in
+`test/perf04_results.md` and `test/benchmarks/perf04_results.json`.
+
+Validation: `python -m pytest -q` passes 82 tests and 32 subtests (147.62 s),
+including the protected one-site and CLI MAP oracles. New tests cover optimizer
+history/convergence/callback parity, zero/one/multiple iterations, independent
+replicate state with shared fit kernels, and changed same-shape objectives.
+Benchmark CLI help, Python compilation, archive source hashes and diff checks
+pass. Production and fixed references are unchanged, so no separate installed
+candidate confirmation is applicable; the normal production MAP integration
+test passes in the full suite.
+
 # Blockers
 
-None for completed PERF-03. Before accepting PERF-04 compilation changes,
-investigate the existing scalar gradient sensitivity documented above and in
-`test/perf03_results.md`. Preserve the fixed numerical references during that
-investigation.
+No implementation blocker for PERF-04: baseline retention is the approved
+outcome when no candidate qualifies. Follow-up: broader likelihood compilation
+fails protected numerical gates. The alpha reverse-path sensitivity around
+near-degenerate eigenvalues requires a separate numerical-correctness proposal
+before changing protected references; no such change is included in this task.
 
 For each blocker, record:
 
@@ -1085,6 +1167,36 @@ as pre-existing numerical sensitivity; same-sized scalar baselines match exactly
 before accepting PERF-04 compilation changes; do not weaken references.
 
 **Next:** PERF-04 — JIT coverage; do not start automatically.
+
+## 2026-10-06 — PERF-04 implementation started
+
+**Task:** Implement the approved JIT benchmarking plan.
+**Started:** Read controls and prior harnesses; froze baseline `0962b3e`; updated
+Current Task and protocol before code changes.
+**Blockers:** Existing JIT/scalar numerical sensitivity must be investigated.
+**Next:** Numerical gates, bounded benchmarks, selection and validation.
+
+## 2026-10-06 — PERF-04 complete
+
+**Task:** Implement JIT benchmarks, investigate numerical sensitivity and select
+only an optimisation meeting the approved acceptance criteria.
+
+**Completed:**
+- Implemented isolated update, value/gradient, objective, separate and fused
+  alternatives with frozen-source baselines and direct numerical gates.
+- Localised compilation/scalar sensitivity to the alpha reverse path near
+  repeated eigenvalues; retained rejected probes and unchanged references.
+- Ran five full-MAP and five large-objective trials per finalist, plus small,
+  fitted/scalar, update/step and resource-preflight controls. Archived 46 reports
+  and validated 20 objective comparisons.
+- Retained production baseline: update-only JIT regresses MAP 1.15% and large
+  objective time 2.86%, with RSS +0.62%; broader JIT fails numerical checks.
+- Passed the full suite (82 tests, 32 subtests), CLI/compilation/archive/diff
+  checks, and updated Current Status, checklist, Design Notes and this handoff.
+
+**Blockers/follow-up:** No PERF-04 blocker. Any repair of the alpha derivative
+requires a separate correctness proposal and independent validation.
+**Next:** PERF-05 benchmarking plan, only when requested.
 
 ---
 
