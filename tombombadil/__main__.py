@@ -2,6 +2,7 @@
 
 import logging
 import gzip
+import csv
 import os
 import numpy as np
 
@@ -56,8 +57,11 @@ def get_options():
 
     # input options
     iGroup = parser.add_argument_group('Input files')
-    iGroup.add_argument('--alignment', type=str, required=True,
-                        help='Alignment file to fit model to')
+    alignment_input = iGroup.add_mutually_exclusive_group(required=True)
+    alignment_input.add_argument('--alignment', type=str,
+                                 help='Alignment file to fit model to')
+    alignment_input.add_argument('--alignment-folder', type=str,
+                                 help='Folder containing alignment files to process')
 
     mGroup = parser.add_argument_group('Model options')
     mGroup.add_argument('--pi', choices=['uniform', 'empirical', 'F3x4'], default='uniform',
@@ -66,6 +70,9 @@ def get_options():
     mGroup.add_argument('--pi-pseudocount', type=float, default=0.5,
                         help='Pseudocount used when --pi empirical or --pi F3x4 is selected '
                              '(default: 0.5)')
+    mGroup.add_argument('--codon-frequencies', type=str, default=None, metavar='PATH',
+                        help='Write empirical codon equilibrium frequencies to PATH; '
+                             'requires --pi empirical')
     mGroup.add_argument('--omega-mode', choices=['scalar', 'per-site'], default='scalar',
                         help='Estimate one omega for the alignment or one omega per codon site '
                              '(default: scalar).')
@@ -239,8 +246,49 @@ def estimate_pi_from_counts(X, pseudocount=0.5):
         raise ValueError(
             "Estimated pi must contain 61 finite, strictly positive non-stop codon frequencies"
         )
-    print("pi",pi)
     return pi
+
+def infer_gene_name(file_name):
+    """Infer a gene name from an alignment filename."""
+    gene_name = os.path.basename(file_name)
+    if gene_name.endswith(".gz"):
+        gene_name = gene_name[:-3]
+    gene_name, _ = os.path.splitext(gene_name)
+    return gene_name
+
+def save_codon_frequency_table(file_name, rows):
+    """Save one or more named 61-element codon-frequency rows as CSV."""
+    with open(file_name, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["gene", *CODON_LIST])
+        for gene_name, frequencies in rows:
+            frequencies = np.asarray(frequencies, dtype=np.float64)
+            if frequencies.shape != (len(CODON_LIST),):
+                raise ValueError(
+                    f"Expected {len(CODON_LIST)} codon frequencies, got shape {frequencies.shape}"
+                )
+            if not np.all(np.isfinite(frequencies)):
+                raise ValueError("Codon frequencies must be finite")
+            writer.writerow([gene_name, *frequencies.tolist()])
+
+def save_codon_frequencies(file_name, frequencies, gene_name):
+    """Save one named 61-element codon-frequency row as CSV."""
+    save_codon_frequency_table(file_name, [(gene_name, frequencies)])
+
+def alignment_paths(options):
+    """Return the alignment file paths selected by the command-line options."""
+    if options.alignment is not None:
+        return [options.alignment]
+
+    folder = options.alignment_folder
+    paths = sorted(
+        os.path.join(folder, entry.name)
+        for entry in os.scandir(folder)
+        if entry.is_file() and not entry.name.startswith(".")
+    )
+    if not paths:
+        raise ValueError(f"No alignment files found in folder: {folder}")
+    return paths
 
 def estimate_f3x4_frequencies_from_counts(X, pseudocount=0.5):
     X = np.asarray(X)
@@ -310,6 +358,10 @@ def main():
         force=True)
 
     options = get_options()
+    if options.codon_frequencies is not None and options.pi != "empirical":
+        raise ValueError("--codon-frequencies requires --pi empirical")
+    if options.alignment_folder is not None and options.codon_frequencies is None:
+        raise ValueError("--alignment-folder requires --codon-frequencies")
     if options.cpus != 1 and options.nuts_chain_mode != "pmap":
         logging.warning(
             "--cpus=%s has no effect unless --nuts-chain-mode pmap is used; "
@@ -317,16 +369,32 @@ def main():
             options.cpus,
         )
     configure_jax_for_options(options)
-    logging.info("Reading alignment...")
-    X, n_samples = count_codons(options.alignment)
-    logging.info(f"Read {n_samples} samples and {X.shape[1]} codons")
+    input_paths = alignment_paths(options)
+    alignment_data = []
+    for input_path in input_paths:
+        logging.info("Reading alignment: %s", input_path)
+        X, n_samples = count_codons(input_path)
+        logging.info("Read %s samples and %s codons", n_samples, X.shape[1])
+        alignment_data.append((input_path, X))
 
     #print("X",X.max())
     if options.pi == 'uniform':
         pi = np.full(61, 1 / 61)
         logging.info("Using uniform codon equilibrium frequencies")
     elif options.pi == 'empirical':
-        pi = estimate_pi_from_counts(X, options.pi_pseudocount)
+        frequency_rows = []
+        for input_path, X in alignment_data:
+            pi = estimate_pi_from_counts(X, options.pi_pseudocount)
+            frequency_rows.append((infer_gene_name(input_path), pi))
+        if options.codon_frequencies is not None:
+            save_codon_frequency_table(
+                options.codon_frequencies,
+                frequency_rows,
+            )
+            logging.info(
+                "Saved empirical codon frequencies for %s alignment(s) to: %s",
+                len(frequency_rows), options.codon_frequencies,
+            )
         logging.info(
             "Using empirical codon equilibrium frequencies estimated from alignment "
             f"with pseudocount {options.pi_pseudocount}"

@@ -12,6 +12,9 @@ import optax
 from tombombadil.__main__ import configure_jax_for_options
 from tombombadil.__main__ import CODON_LIST
 from tombombadil.__main__ import estimate_pi_from_counts
+from tombombadil.__main__ import infer_gene_name
+from tombombadil.__main__ import save_codon_frequencies
+from tombombadil.__main__ import save_codon_frequency_table
 from tombombadil.__main__ import estimate_f3x4_frequencies_from_counts
 from tombombadil.__main__ import estimate_f3x4_pi_from_counts
 from tombombadil.__main__ import get_options
@@ -77,6 +80,55 @@ class TestEstimatePiFromCounts(unittest.TestCase):
             estimate_pi_from_counts(X, pseudocount=-0.1)
 
 
+class TestSaveCodonFrequencies(unittest.TestCase):
+    def test_writes_codon_header_and_frequency_row(self):
+        frequencies = np.arange(1, 62, dtype=float)
+        frequencies /= frequencies.sum()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output_path = os.path.join(tmp, "codon_frequencies.csv")
+            save_codon_frequencies(output_path, frequencies, "porB3_aligned")
+
+            with open(output_path, newline="") as f:
+                rows = list(csv.reader(f))
+
+        self.assertEqual(2, len(rows))
+        self.assertEqual(["gene", *CODON_LIST], rows[0])
+        self.assertEqual("porB3_aligned", rows[1][0])
+        np.testing.assert_allclose(np.asarray(rows[1][1:], dtype=float), frequencies)
+
+    def test_rejects_wrong_frequency_shape(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_path = os.path.join(tmp, "codon_frequencies.csv")
+            with self.assertRaises(ValueError):
+                save_codon_frequencies(output_path, np.ones(60), "gene")
+
+    def test_infers_gene_name_from_alignment_filename(self):
+        self.assertEqual("porB3_aligned", infer_gene_name("/data/porB3_aligned.fasta"))
+        self.assertEqual("porB3_aligned", infer_gene_name("/data/porB3_aligned.fasta.gz"))
+
+    def test_writes_multiple_named_frequency_rows(self):
+        first = np.full(61, 1 / 61)
+        second = np.arange(1, 62, dtype=float)
+        second /= second.sum()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output_path = os.path.join(tmp, "codon_frequencies.csv")
+            save_codon_frequency_table(
+                output_path,
+                [("gene_a", first), ("gene_b", second)],
+            )
+
+            with open(output_path, newline="") as f:
+                rows = list(csv.reader(f))
+
+        self.assertEqual(3, len(rows))
+        self.assertEqual("gene_a", rows[1][0])
+        self.assertEqual("gene_b", rows[2][0])
+        np.testing.assert_allclose(np.asarray(rows[1][1:], dtype=float), first)
+        np.testing.assert_allclose(np.asarray(rows[2][1:], dtype=float), second)
+
+
 class TestPiOptions(unittest.TestCase):
     def test_empirical_pi_options_parse(self):
         argv = [
@@ -103,6 +155,31 @@ class TestPiOptions(unittest.TestCase):
 
         self.assertEqual("F3x4", options.pi)
         self.assertEqual(0.25, options.pi_pseudocount)
+
+    def test_codon_frequencies_path_parses(self):
+        argv = [
+            "tombombadil",
+            "--alignment", "alignment.fasta",
+            "--pi", "empirical",
+            "--codon-frequencies", "frequencies.csv",
+        ]
+        with mock.patch.object(sys, "argv", argv):
+            options = get_options()
+
+        self.assertEqual("frequencies.csv", options.codon_frequencies)
+
+    def test_alignment_folder_parses(self):
+        argv = [
+            "tombombadil",
+            "--alignment-folder", "alignments",
+            "--pi", "empirical",
+            "--codon-frequencies", "frequencies.csv",
+        ]
+        with mock.patch.object(sys, "argv", argv):
+            options = get_options()
+
+        self.assertEqual("alignments", options.alignment_folder)
+        self.assertIsNone(options.alignment)
 
     def test_invalid_pi_option_rejected(self):
         argv = ["tombombadil", "--alignment", "alignment.fasta", "--pi", "bad"]
