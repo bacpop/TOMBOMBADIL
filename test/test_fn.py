@@ -12,6 +12,7 @@ import optax
 from tombombadil.__main__ import configure_jax_for_options
 from tombombadil.__main__ import CODON_LIST
 from tombombadil.__main__ import estimate_pi_from_counts
+from tombombadil.__main__ import load_pi_from_tsv
 from tombombadil.__main__ import estimate_f3x4_frequencies_from_counts
 from tombombadil.__main__ import estimate_f3x4_pi_from_counts
 from tombombadil.__main__ import get_options
@@ -77,6 +78,61 @@ class TestEstimatePiFromCounts(unittest.TestCase):
             estimate_pi_from_counts(X, pseudocount=-0.1)
 
 
+class TestLoadPiFromTsv(unittest.TestCase):
+    def _write_tsv(self, lines):
+        temporary_file = tempfile.NamedTemporaryFile(mode="w", suffix=".tsv", delete=False)
+        temporary_file.write("\n".join(lines) + "\n")
+        temporary_file.close()
+        self.addCleanup(lambda: os.unlink(temporary_file.name))
+        return temporary_file.name
+
+    def test_loads_reorders_and_normalizes_codon_frequencies(self):
+        path = self._write_tsv(
+            ["codon\tfrequency"]
+            + [
+                f"{codon}\t{index + 1}"
+                for index, codon in reversed(list(enumerate(CODON_LIST)))
+            ]
+        )
+
+        pi = load_pi_from_tsv(path)
+
+        expected = np.arange(1, 62, dtype=float)
+        expected /= expected.sum()
+        np.testing.assert_allclose(pi, expected)
+        self.assertAlmostEqual(1.0, pi.sum())
+
+    def test_rejects_missing_codon(self):
+        path = self._write_tsv([f"{codon}\t1" for codon in CODON_LIST[:-1]])
+        with self.assertRaises(ValueError):
+            load_pi_from_tsv(path)
+
+    def test_rejects_duplicate_codon(self):
+        path = self._write_tsv(
+            [f"{codon}\t1" for codon in CODON_LIST]
+            + [f"{CODON_LIST[0]}\t1"]
+        )
+        with self.assertRaises(ValueError):
+            load_pi_from_tsv(path)
+
+    def test_rejects_stop_codon(self):
+        path = self._write_tsv(
+            ["TAA\t1"] + [f"{codon}\t1" for codon in CODON_LIST]
+        )
+        with self.assertRaises(ValueError):
+            load_pi_from_tsv(path)
+
+    def test_rejects_zero_frequency(self):
+        path = self._write_tsv(
+            [
+                f"{codon}\t{0 if index == 0 else 1}"
+                for index, codon in enumerate(CODON_LIST)
+            ]
+        )
+        with self.assertRaises(ValueError):
+            load_pi_from_tsv(path)
+
+
 class TestPiOptions(unittest.TestCase):
     def test_empirical_pi_options_parse(self):
         argv = [
@@ -109,6 +165,19 @@ class TestPiOptions(unittest.TestCase):
         with mock.patch.object(sys, "argv", argv):
             with self.assertRaises(SystemExit):
                 get_options()
+
+    def test_precomputed_pi_options_parse(self):
+        argv = [
+            "tombombadil",
+            "--alignment", "alignment.fasta",
+            "--pi", "precomputed",
+            "--pi-tsv", "frequencies.tsv",
+        ]
+        with mock.patch.object(sys, "argv", argv):
+            options = get_options()
+
+        self.assertEqual("precomputed", options.pi)
+        self.assertEqual("frequencies.tsv", options.pi_tsv)
 
 
 class TestEstimateF3x4PiFromCounts(unittest.TestCase):

@@ -3,6 +3,7 @@
 import logging
 import gzip
 import os
+import csv
 import numpy as np
 
 from .__init__ import __version__
@@ -60,9 +61,12 @@ def get_options():
                         help='Alignment file to fit model to')
 
     mGroup = parser.add_argument_group('Model options')
-    mGroup.add_argument('--pi', choices=['uniform', 'empirical', 'F3x4'], default='uniform',
+    mGroup.add_argument('--pi', choices=['uniform', 'empirical', 'F3x4', 'precomputed'], default='uniform',
                         help='Codon equilibrium frequencies: uniform or estimated from the alignment '
-                             '(default: uniform)')
+                             'or loaded from a TSV file (default: uniform)')
+    mGroup.add_argument('--pi-tsv', type=str, default=None, metavar='PATH',
+                        help='Two-column TSV containing codon names and frequencies; '
+                             'required when --pi precomputed')
     mGroup.add_argument('--pi-pseudocount', type=float, default=0.5,
                         help='Pseudocount used when --pi empirical or --pi F3x4 is selected '
                              '(default: 0.5)')
@@ -242,6 +246,59 @@ def estimate_pi_from_counts(X, pseudocount=0.5):
     print("pi",pi)
     return pi
 
+def load_pi_from_tsv(file_name):
+    """Load and normalize a 61-codon equilibrium-frequency vector from TSV."""
+    values = {}
+    with open(file_name, "r", newline="") as f:
+        reader = csv.reader(f, delimiter="\t")
+        for line_number, row in enumerate(reader, start=1):
+            if not row or all(not field.strip() for field in row):
+                continue
+            if len(row) != 2:
+                raise ValueError(
+                    f"{file_name} line {line_number} must contain exactly two TSV columns"
+                )
+
+            codon = row[0].strip().upper()
+            frequency_text = row[1].strip()
+            if not values and codon in {"CODON", "CODONS"} and frequency_text.lower() in {
+                "frequency", "frequencies", "freq", "pi"
+            }:
+                continue
+            if codon not in CODON_LIST:
+                raise ValueError(
+                    f"{file_name} line {line_number} contains unknown or non-sense codon: {codon!r}"
+                )
+            if codon in values:
+                raise ValueError(f"{file_name} contains duplicate codon: {codon}")
+            try:
+                frequency = float(frequency_text)
+            except ValueError as exc:
+                raise ValueError(
+                    f"{file_name} line {line_number} has a non-numeric frequency"
+                ) from exc
+            values[codon] = frequency
+
+    missing = [codon for codon in CODON_LIST if codon not in values]
+    if missing:
+        raise ValueError(
+            f"{file_name} is missing codon frequencies for: {', '.join(missing)}"
+        )
+
+    frequencies = np.array([values[codon] for codon in CODON_LIST], dtype=np.float64)
+    if not np.all(np.isfinite(frequencies)):
+        raise ValueError("Precomputed codon frequencies must be finite")
+    if np.any(frequencies < 0):
+        raise ValueError("Precomputed codon frequencies must be non-negative")
+    total = frequencies.sum()
+    if total <= 0:
+        raise ValueError("Precomputed codon frequencies must have a positive total")
+
+    frequencies = frequencies / total
+    if np.any(frequencies <= 0):
+        raise ValueError("Precomputed codon frequencies must be strictly positive")
+    return frequencies
+
 def estimate_f3x4_frequencies_from_counts(X, pseudocount=0.5):
     X = np.asarray(X)
     if X.shape[0] != 61:
@@ -310,6 +367,10 @@ def main():
         force=True)
 
     options = get_options()
+    if options.pi == "precomputed" and options.pi_tsv is None:
+        raise ValueError("--pi precomputed requires --pi-tsv PATH")
+    if options.pi != "precomputed" and options.pi_tsv is not None:
+        raise ValueError("--pi-tsv can only be used with --pi precomputed")
     if options.cpus != 1 and options.nuts_chain_mode != "pmap":
         logging.warning(
             "--cpus=%s has no effect unless --nuts-chain-mode pmap is used; "
@@ -337,6 +398,9 @@ def main():
             "Using F3x4 codon equilibrium frequencies estimated from alignment "
             f"with pseudocount {options.pi_pseudocount}"
         )
+    elif options.pi == 'precomputed':
+        pi = load_pi_from_tsv(options.pi_tsv)
+        logging.info("Using precomputed codon equilibrium frequencies from %s", options.pi_tsv)
     else:
         raise ValueError(f"Unsupported --pi mode: {options.pi}")
 
