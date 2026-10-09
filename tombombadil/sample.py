@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 
 from .likelihood import *
+from .site_mapping import make_site_mapper
 
 # NUTS/Bayesian sampling
 def run_nuts_sampler(fn, start_params, *, num_warmup, num_samples,
@@ -302,14 +303,11 @@ def _run_map_replicates(fn, start_params, param_labels, n_reps, *, n_iter,
 
 def make_log_density_fn(pi_eq, log_pi, pimat, pimatinv, pimult, X, mask,
             *, include_invariant, aggregate, prior_mode, estimate_eta,
-            eigen_jitter, omega_floor, omega_mode): # closure for defining fn
+            eigen_jitter, omega_floor, omega_mode, site_devices=None): # closure for defining fn
     validate_omega_mode(omega_mode)
     model_fn = codon_site_log_likelihood if eigen_jitter else codon_site_log_likelihood_no_jitter
-    omega_axis = None if omega_mode == "scalar" else 0
-    batched_loss = jax.vmap(
-        model_fn,
-        in_axes=(None, None, None, None, None, None, None, omega_axis,
-                 None, None, None, None, None, 1)
+    batched_loss = make_site_mapper(
+        model_fn, omega_mode=omega_mode, n_sites=X.shape[1], devices=site_devices,
     )
     def f(raw_x):
 
@@ -749,7 +747,7 @@ def plot_per_site_omega(params, mask=None, *, domain_labels):
 
 
 def _prepare_model(X, pi_eq, include_invariant, aggregate, prior_mode,
-                   estimate_eta, eigen_jitter, omega_floor, omega_mode):
+                   estimate_eta, eigen_jitter, omega_floor, omega_mode, site_devices=None):
     """Build the objective, initial parameters, and site mask shared by fitters."""
     validate_omega_mode(omega_mode)
     logging.info("Precomputing transforms...")
@@ -837,6 +835,7 @@ def _prepare_model(X, pi_eq, include_invariant, aggregate, prior_mode,
         eigen_jitter=eigen_jitter,
         omega_floor=omega_floor,
         omega_mode=omega_mode,
+        site_devices=site_devices,
     )
     return fn, base_params, mask
 

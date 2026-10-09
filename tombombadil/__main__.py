@@ -49,7 +49,7 @@ def get_options():
     runtime_group.add_argument('--platform', choices=['cpu', 'gpu', 'tpu'], default='cpu',
                                help='Which hardware/device to run on')
     runtime_group.add_argument('--cpus', type=_positive_int, default=4,
-                               help='JAX worker setting on CPU; also sets local devices for NUTS pmap')
+                               help='JAX CPU workers; also sets devices for per-site MAP and NUTS pmap')
 
     model_group = parser.add_argument_group('Shared model options')
     model_group.add_argument('--pi', choices=['uniform', 'empirical', 'F3x4'], default='uniform',
@@ -139,7 +139,9 @@ def configure_jax_for_options(options):
         options.platform,
         cpus=options.cpus,
         force_cpu_devices=(
-            options.fit_method == "nuts" and options.nuts_chain_mode == "pmap"
+            (options.fit_method == "nuts" and options.nuts_chain_mode == "pmap")
+            or (options.fit_method == "map" and options.omega_mode == "per-site"
+                and options.cpus > 1)
         ),
     )
 
@@ -207,6 +209,17 @@ def main():
 
     from .sample import _prepare_model, run_map_optimizer, run_nuts_sampler
 
+    site_devices = None
+    if (options.platform == "cpu" and options.fit_method == "map"
+            and options.omega_mode == "per-site" and options.cpus > 1):
+        import jax
+        site_devices = tuple(jax.local_devices(backend="cpu"))
+        if len(site_devices) != options.cpus:
+            raise RuntimeError(
+                f"Requested {options.cpus} CPU devices, but JAX sees {len(site_devices)}. "
+                "Configure --cpus before importing or initializing JAX."
+            )
+
     domain_labels = None
     if options.domains is not None:
         if options.omega_mode != 'per-site':
@@ -226,6 +239,7 @@ def main():
         eigen_jitter=True,
         omega_floor=True,
         omega_mode=options.omega_mode,
+        site_devices=site_devices,
     )
 
     if options.fit_method == "map":
