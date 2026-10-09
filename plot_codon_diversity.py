@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.patches import Patch
 
-from tombombadil.__main__ import count_codons
+from tombombadil.alignment import count_codons
 
 
 # 61 sense codons in TCAG order (same ordering as the count matrix rows)
