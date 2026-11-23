@@ -1,6 +1,4 @@
-<img src="https://github.com/bacpop/TOMBOMBADIL_jax/blob/main/TOMBOMBADIL_logo.png" alt="" width="200"/>
-
-# TOMBOMBADIL
+# TOMBOMBADIL <img src="https://github.com/bacpop/TOMBOMBADIL_jax/blob/main/TOMBOMBADIL_logo.png" alt="" width="200"/>
 **T**ree-free **O**mega **M**apping **B**y **O**bserving **M**utations of **B**ases and **A**mino acids **D**istributed **I**nside **L**oci 
 
 Estimate dN/dS directly from alignments using codon counts, no tree required.
