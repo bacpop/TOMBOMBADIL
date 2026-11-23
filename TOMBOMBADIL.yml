@@ -1,0 +1,13 @@
+name: TOMBOMBADIL
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.14
+  - numpy
+  - jax
+  - blackjax
+  - matplotlib
+  - pip
+  - pip:
+      - git+https://github.com/bacpop/TOMBOMBADIL/tree/v0.1.0
