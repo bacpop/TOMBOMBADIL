@@ -18,3 +18,6 @@ If you are new to TOMBOMBADIL, we'd recommend to start with :doc:`installation` 
    :maxdepth: 2
    :caption: Contents:
 
+   overview
+   installation
+   example
