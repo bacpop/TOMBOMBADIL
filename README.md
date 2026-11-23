@@ -43,7 +43,7 @@ Fit one omega estimate for per codon position in the alignment with maximum a po
 python -m tombombadil --alignment alignment.fas.aln --omega-mode per-site --output-jax output
 ```
 
-For more examples see the [documentation](https://tombombadil.bacpop.org/)
+For more examples see the [documentation](https://bacpop.github.io/TOMBOMBADIL/)
 
 
 

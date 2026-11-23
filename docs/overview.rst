@@ -1,8 +1,7 @@
 
 
 
-
-# More options
+More options
 --convergence-tol x default=1e-6
 
 --sample-it x number of sampling steps
