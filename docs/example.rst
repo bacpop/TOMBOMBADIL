@@ -1,9 +1,10 @@
+Example analysis
+=================
 
 The repository includes the example codon alignment of porin porB
 of *Neisseria meningitidis*, ``porB3_aligned.fasta``.
 
 1. Scalar omega with maximum a posteriori (MAP) optimisation
-=============================================================
 
 *(Takes around 30 seconds on one CPU core.)*
 
@@ -25,7 +26,6 @@ This writes ``scalar_porB3_map_Allparams.csv``.
 
 
 2. Per-site omega with maximum a posteriori (MAP) optimisation
-===============================================================
 
 *(Takes about four minutes on one CPU core.)*
 
@@ -45,7 +45,6 @@ This writes ``per_site_porB3_map_GTRparams.csv``,
 
 
 3. Scalar omega with NUTS sampling
-==================================
 
 *(Takes about 2.5 minutes on four CPU cores.)*
 

@@ -8,7 +8,7 @@ TOMBOMBADIL documentation
 
 TOMBOMBADIL is a tool for estimating selection using dN/dS, the ratio of nonsynonymous to synonymous substitutions. It estimates dN/dS directly from codon counts from alignment, and does not rely on phylogenetic trees.
 
-If you are new to TOMBOMBADIL, we'd recommend to start with :doc:`installation` and continue by reading :doc:`overview`.
+If you are new to TOMBOMBADIL, we'd recommend to start with :doc:`installation` and continue by reading :doc:`overview`. An example analysis can be found in :doc:`example`.
 
 .. image:: images/TOMBOMBADIL_logo.png
    :alt:  TOMBOMBADIL
